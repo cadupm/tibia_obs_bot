@@ -251,9 +251,26 @@ KITE_BLOQUEIO = 3.0             # s que um lado fica fora depois de o passo nao
 # nao enfeite: com bicho a esquerda e outro em cima, nenhum dos quatro lados
 # retos aumenta a distancia do mais perto - so a diagonal aumenta. No cliente as
 # diagonais sao o teclado numerico (7 9 1 3).
-KITE_PASSOS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0),
-               "num7": (-1, -1), "num9": (1, -1),
-               "num1": (-1, 1), "num3": (1, 1)}
+# As TECLAS de andar. As setas funcionam sempre; as diagonais dependem do
+# cliente. No teste em jogo, as do teclado numerico nao moveram o personagem
+# (dezenas de "num9" sem sair do lugar, e um "right" que andou) - por isso elas
+# sao configuraveis: no Tibia 13 da para amarrar as diagonais a qualquer tecla
+# nos controles do cliente, e ai basta escrever aqui as que voce escolheu.
+# A ordem e: cima-esquerda, cima-direita, baixo-esquerda, baixo-direita.
+KITE_DIAGONAIS_TECLAS = "num7,num9,num1,num3"
+
+
+def monta_passos():
+    """As teclas de andar com o rumo de cada uma, montado da configuracao."""
+    passos = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+    rumos = [(-1, -1), (1, -1), (-1, 1), (1, 1)]
+    teclas = [t.strip() for t in KITE_DIAGONAIS_TECLAS.split(",") if t.strip()]
+    for tecla, rumo in zip(teclas, rumos):
+        passos[tecla] = rumo
+    return passos
+
+
+KITE_PASSOS = monta_passos()
 # Quadrados em que NAO se pisa: escada, buraco, portal. Sao ensinados por
 # clique ("python main.py --evitar") e guardados em evitar.json. A comparacao e
 # por assinatura reduzida (um pixel a cada 4), que aguenta a animacao do chao.
@@ -2703,8 +2720,9 @@ def passo_de_kite(criaturas, distancia=None, proibidos=(), pisado=(),
                 sum((dx * dx + dy * dy) ** 0.5 for dx, dy in lista))
         return (seguro, -abs(perto - distancia), reta)
 
-    passos = KITE_PASSOS if KITE_DIAGONAIS else {
-        t: p for t, p in KITE_PASSOS.items() if 0 in p}
+    todos = monta_passos()             # a configuracao pode ter mudado na GUI
+    passos = todos if KITE_DIAGONAIS else {
+        t: p for t, p in todos.items() if 0 in p}
     def conhecido(px, py):
         """O destino deste passo e chao por onde o personagem ja andou?"""
         if aqui is None or not pisado:
@@ -3026,23 +3044,33 @@ def show_teclas():
         print(f"  {tecla:>6} (esperado {esperado}): andou {andou} "
               f"-> {'ANDA' if distancia >= 2 else 'nao andou'}")
         time.sleep(0.4)
-        # volta para onde estava, para nao sair andando pela cave
-        volta = {"up": "down", "down": "up", "left": "right", "right": "left",
-                 "num7": "num3", "num3": "num7", "num9": "num1",
-                 "num1": "num9"}[tecla]
-        if distancia >= 2:
+        # volta para onde estava, para nao sair andando pela cave: a tecla de
+        # volta e a do rumo oposto, calculada - assim vale para qualquer
+        # diagonal que voce tenha configurado
+        oposto = (-KITE_PASSOS[tecla][0], -KITE_PASSOS[tecla][1])
+        volta = next((t for t, r in KITE_PASSOS.items() if r == oposto), None)
+        if distancia >= 2 and volta:
             pyautogui.press(volta)
             time.sleep(0.6)
 
     setas = [t for t in ("up", "down", "left", "right") if resultado[t] >= 2]
-    diagonais = [t for t in ("num7", "num9", "num1", "num3")
-                 if resultado[t] >= 2]
+    diagonais = [t for t, r in KITE_PASSOS.items()
+                 if 0 not in r and resultado.get(t, 0) >= 2]
     print(chr(10) + f"setas que andam: {setas or 'nenhuma'}")
     print(f"diagonais que andam: {diagonais or 'nenhuma'}")
     if not diagonais:
-        print("Sem diagonais, ponha KITE_DIAGONAIS = False: o bot para de "
-              "tentar teclas que nao movem. Com NumLock ligado costuma "
-              "funcionar - vale testar de novo.")
+        print("Nenhuma diagonal andou. Tres coisas a tentar, nessa ordem:")
+        print("  1. ligar o NumLock e rodar isto de novo;")
+        print("  2. nos controles do cliente, amarrar as diagonais a teclas "
+              "suas (por exemplo q, e, z, c) e escrever essas teclas em "
+              "KITE_DIAGONAIS_TECLAS, na ordem cima-esquerda, cima-direita, "
+              "baixo-esquerda, baixo-direita;")
+        print("  3. deixar KITE_DIAGONAIS desligado: com quatro lados o kite "
+              "funciona, so perde um caso - bicho de um lado e outro em cima, "
+              "onde nenhuma seta aumenta a distancia.")
+    else:
+        print(f"Pode ligar KITE_DIAGONAIS: {len(diagonais)} diagonal(is) "
+              f"andando.")
     restore_windows()
 
 

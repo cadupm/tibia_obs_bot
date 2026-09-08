@@ -71,5 +71,6 @@
   ],
   "KITE_CLIQUE": 2,
   "KITE_CLIQUE_ESPERA": 1.5,
-  "KITE_PISADO_MAX": 400
+  "KITE_PISADO_MAX": 400,
+  "KITE_DIAGONAIS_TECLAS": "num7,num9,num1,num3"
 }

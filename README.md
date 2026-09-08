@@ -194,19 +194,27 @@ com a **mediana dos restos recentes**, não com um número fixo: cada cave tem s
 textura, e o que interessa é a mudança brusca. Desligável em
 `PARAR_SE_MUDAR_ANDAR`.
 
-As **diagonais** (teclado numérico) vêm desligadas: no cliente testado elas não
-movem o personagem — de um log inteiro de kite, o único passo que andou foi um
-`right`, e as dezenas de `num9` não saíram do lugar. Meça no seu:
+As **diagonais** vêm desligadas e **não estão confirmadas**: no cliente testado
+elas não movem o personagem — de um log inteiro de kite, o único passo que andou
+foi um `right`, e as dezenas de `num9` não saíram do lugar. Por isso as teclas
+delas são **configuráveis** (`KITE_DIAGONAIS_TECLAS`, na ordem cima-esquerda,
+cima-direita, baixo-esquerda, baixo-direita): no Tibia 13 dá para amarrar as
+diagonais a qualquer tecla nos controles do cliente — `q,e,z,c`, por exemplo — e
+aí basta escrever essas aqui. Meça no seu:
 
 ```
 python main.py --teclas
 ```
 
-Ele aperta cada tecla de movimento, lê no minimapa se o personagem saiu do
-lugar e volta para o ponto de partida. Andando as diagonais (com NumLock ligado
-costuma andar), ligue `KITE_DIAGONAIS` — elas resolvem um caso que as setas não
-resolvem: com um bicho à esquerda e outro em cima, nenhum dos quatro lados
-retos aumenta a distância do mais perto.
+Ele aperta cada tecla configurada, lê no minimapa se o personagem saiu do lugar
+e volta para o ponto de partida. Nenhuma diagonal andando, ele diz o que tentar,
+nessa ordem: ligar o NumLock e repetir; amarrar as diagonais a teclas suas nos
+controles do cliente e escrevê-las em `KITE_DIAGONAIS_TECLAS`; ou seguir sem
+elas.
+
+Sem diagonais o kite funciona — perde só um caso: com um bicho à esquerda e
+outro em cima, nenhum dos quatro lados retos aumenta a distância do mais perto,
+e só a diagonal aumenta.
 
 O kite é comportamento de **combate**, não de rota: funciona com `ENABLE_WALK`
 desligado, para quem liga o bot só para lutar.
