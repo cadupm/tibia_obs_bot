@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.dmp
+
+# capturas e recortes de tela de diagnostico ficam fora; as do README, nao
+*.png
+*.npy
+!docs/*.png

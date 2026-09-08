@@ -1,0 +1,64 @@
+{
+  "HP_MAX": 625,
+  "MANA_MAX": 750,
+  "ENABLE_HEAL": true,
+  "HEAL_HOTKEY": "f2",
+  "HEAL_THRESHOLD": 550.0,
+  "HEAL_COOLDOWN": 1.0,
+  "HEAL_STRONG_HOTKEY": "f5",
+  "HEAL_STRONG_THRESHOLD": 500.0,
+  "ENABLE_MANA": true,
+  "MANA_HOTKEY": "f3",
+  "MANA_THRESHOLD": 140.0,
+  "MANA_COOLDOWN": 1.2,
+  "ENABLE_ATTACK": true,
+  "ATTACK_HOTKEY": "space",
+  "ATTACK_COOLDOWN": 0.6,
+  "ATTACK_CONFIRM": 4,
+  "TARGET_LOST_MAX": 4.0,
+  "ENABLE_SPELL": true,
+  "SPELL_HOTKEY": "f1",
+  "SPELL_COOLDOWN": 2.0,
+  "SPELL_MANA_FLOOR": 25.0,
+  "SPELL_DELAY_AFTER_ATTACK": 0.5,
+  "ONLY_KNOWN_MONSTERS": true,
+  "AUTO_LEARN": false,
+  "ENABLE_WALK": true,
+  "MARK_COLOR": "azul",
+  "MARK_ARRIVE": 3,
+  "STOP_WALK_KEY": "esc",
+  "STOP_ATTACK_DELAY": 0.25,
+  "WALK_CLICK_COOLDOWN": 1.5,
+  "WALK_MAX_CLICKS": 4,
+  "MINIMAP_PX_SQM": 2.0,
+  "WAYPOINTS_FILE": "rotas/padrao.json",
+  "USE_ROUTE_ORDER": true,
+  "ENABLE_AUTOCAST": true,
+  "AUTOCAST_MANA_FLOOR": 18.0,
+  "OBS_MODE": true,
+  "OBS_TITLE": "Projetor",
+  "KILL_KEY": "ctrl+alt+s",
+  "LOOP_DELAY": 0.15,
+  "AUTOCAST": [
+    {
+      "ativo": true,
+      "tecla": "f12",
+      "intervalo": 60.0
+    },
+    {
+      "ativo": true,
+      "tecla": "f7",
+      "intervalo": 50.0
+    },
+    {
+      "ativo": true,
+      "tecla": "f8",
+      "intervalo": 60.0
+    },
+    {
+      "ativo": false,
+      "tecla": "f10",
+      "intervalo": 300.0
+    }
+  ]
+}
