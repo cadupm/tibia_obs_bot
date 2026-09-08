@@ -62,6 +62,7 @@ ABAS = [
     ]),
     ("Combate", [
         ("Ataque", "ENABLE_ATTACK", [
+            ("ATTACK_MODE", "Como lutar", str, "stand, chase ou kite"),
             ("ATTACK_HOTKEY", "Tecla de atacar", str, "atacar proxima criatura"),
             ("ATTACK_COOLDOWN", "Cooldown", float, "segundos"),
             ("ATTACK_CONFIRM", "Leituras sem alvo p/ trocar", int,
@@ -70,6 +71,12 @@ ABAS = [
              "segundos; so troca quando ele sumir da battle list"),
             ("TARGET_GONE_READS", "Leituras sem o bicho p/ dar por morto", int,
              "uma leitura ruim nao conta como morte"),
+        ]),
+        ("Kite (so no modo kite)", None, [
+            ("KITE_DIST", "Manter distancia de", int,
+             "SQM de todo bicho na tela, inclusive o alvo"),
+            ("KITE_COOLDOWN", "Intervalo entre passos", float,
+             "segundos; a velocidade de andar do personagem"),
         ]),
         ("Combo de magia", "ENABLE_SPELL", [
             ("SPELL_HOTKEY", "Magia do combo", str, "entra entre os turnos"),

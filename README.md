@@ -47,10 +47,39 @@ serve de freio de mão.
 | aba | o que tem |
 | --- | --- |
 | Healing | vida/mana máximas, cura, cura de emergência, poção de mana |
-| Combate | tecla de atacar, combo de magia, lista de monstros a atacar |
+| Combate | como lutar (stand/chase/kite), tecla de atacar, combo de magia, lista de monstros |
 | Rota | marcas do mapa, rota gravada, tecla de parar de andar |
 | Autocast | até 4 teclas em intervalo fixo (pá, comida, buff) |
 | Setup | título do projetor, tecla de parada, intervalo do loop |
+
+### Como lutar: stand, chase ou kite
+
+`ATTACK_MODE`, na aba Combate. O cliente tem o modo de luta dele nos botões; o
+que se escolhe aqui é o que **o bot** faz enquanto luta:
+
+| modo | o bot |
+| --- | --- |
+| `stand` | manda a tecla de parada ao engajar e não sai do lugar |
+| `chase` | **não** manda a tecla de parada — o `esc` cancelaria o follow do cliente junto com o ataque. Só para de clicar no mapa e deixa o cliente perseguir |
+| `kite` | anda de seta para manter `KITE_DIST` SQM de todo bicho na tela, inclusive do alvo |
+
+No kite, o bot acha as criaturas pela **barrinha de vida** que o cliente desenha
+sobre cada uma (medido: 28×2 px, cor (0,95,0) com vida cheia) e converte a
+posição dela em SQM. A barra do próprio personagem cai no quadrado do meio do
+viewport e é descartada. As **diagonais** (teclado numérico) não são enfeite:
+com um bicho à esquerda e outro em cima, nenhum dos quatro lados retos aumenta a
+distância do mais perto — só a diagonal aumenta.
+
+Antes de confiar no kite, confira a geometria no seu layout:
+
+```
+python main.py --kite
+```
+
+Ele imprime as criaturas em SQM e salva `kite_visto.png` com a grade desenhada:
+o quadrado **ciano** tem de cair no personagem e os **vermelhos** nos bichos. Se
+não caírem, ajuste `GAME_VIEW` e `TILE_PX` (medidos no cliente 1920×1009:
+viewport em (221, 61), grade de 15×11 quadrados de 68 px).
 
 ### Rota: dois modos
 
@@ -130,7 +159,8 @@ testes/         simulações do comportamento de rota e da leitura de tela
 
 Modos de linha de comando úteis: `--bars` (só lê vida/mana), `--battle`
 (diagnóstico da battle list), `--calib` (coordenada e cor sob o mouse),
-`--zoom` (mede px por SQM no zoom em uso), `--marcas` (grava a ordem da rota).
+`--zoom` (mede px por SQM no zoom em uso), `--marcas` (grava a ordem da rota),
+`--kite` (criaturas na tela em SQM, com a grade desenhada num PNG).
 
 ## Testes
 
@@ -144,10 +174,14 @@ python testes/testa_grampo.py          # dois braços colados com pedra no meio
 python testes/testa_rota_ordem.py      # rota gravada: segue a ordem, começando do meio
 python testes/testa_trava_alvo.py      # não troca de alvo até o bicho sumir da lista
 python testes/testa_ordem_parada.py   # para antes de atacar; não clica no mapa lutando
+python testes/testa_kite.py           # acha as criaturas na tela e sabe para onde fugir
 ```
 
-Os que leem imagem (`testa_bars.py`, `testa_moribundo.py`) precisam das amostras
-`.npy` ao lado, que não vão no repositório.
+`testa_kite.py` usa `tela_cave.npy`, uma captura de dentro da cave que vai no
+repositório: é ela que prova a detecção de criatura contra pixel de verdade.
+`testa_bars.py` e `testa_moribundo.py` precisam de amostras `.npy` que não vão.
+`png.py` ali do lado é um leitor de PNG em numpy — o projeto não usa Pillow, e o
+mss escreve PNG mas não lê.
 
 ## Problemas conhecidos
 

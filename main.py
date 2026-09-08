@@ -210,6 +210,37 @@ WALK_TOLERANCE = 4              # px de minimapa (2 SQM). Com a rota toda de
                                 # clique, a folga cobre o erro de medicao: nos
                                 # testes a chegada ficou entre 0 e 2px do alvo.
 WALK_TIMEOUT = 15.0             # s no maximo por trecho
+# COMO LUTAR. O cliente tem o proprio modo de luta (stand/chase) nos botoes; o
+# que se escolhe aqui e o que o BOT faz enquanto luta:
+#   "stand" - manda a tecla de parada ao engajar e nao sai do lugar;
+#   "chase" - NAO manda a tecla de parada (ela cancela o follow do cliente
+#             junto com o ataque); so para de clicar no mapa e deixa o cliente
+#             perseguir. Ponha o cliente em chase nos botoes dele;
+#   "kite"  - anda de seta para manter distancia de todo bicho na tela,
+#             inclusive do alvo. Setas forcam stand no cliente, o que e
+#             justamente o que um kiter quer.
+ATTACK_MODE = "stand"
+KITE_DIST = 3                   # SQM que se quer manter de qualquer bicho
+KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
+# Para onde da para fugir, e a tecla de cada lado. As DIAGONAIS sao necessarias,
+# nao enfeite: com bicho a esquerda e outro em cima, nenhum dos quatro lados
+# retos aumenta a distancia do mais perto - so a diagonal aumenta. No cliente as
+# diagonais sao o teclado numerico (7 9 1 3).
+KITE_PASSOS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0),
+               "num7": (-1, -1), "num9": (1, -1),
+               "num1": (-1, 1), "num3": (1, 1)}
+
+# O VIEWPORT do jogo, em offsets de cliente, e o tamanho do quadrado na tela.
+# Medido no cliente 1920x1009 do usuario: a area com textura comeca em (221,61)
+# e a grade de 15x11 quadrados de 68px fecha exatamente nas bordas (1241, 809).
+# Confira no seu layout com "python main.py --kite", que imprime o que enxerga.
+GAME_VIEW = (221, 61, 15 * 68, 11 * 68)
+TILE_PX = 68                    # px por SQM na tela do jogo
+CREATURE_BAR_W = (18, 34)       # largura da barrinha de vida sobre a criatura
+CREATURE_BAR_H = (2, 6)         # e a altura dela
+CREATURE_BAR_ABOVE = 1          # a criatura fica este tanto de quadrado abaixo
+                                # da propria barra
+
 STOP_ATTACK_DELAY = 0.25        # s entre a tecla de parada e a de ataque: o
                                 # cliente precisa processar a parada primeiro,
                                 # senao ela solta o alvo recem-pego
@@ -2374,6 +2405,184 @@ def cast_spell(alvo, mana, spell_cd, nao_antes_de=0.0):
     return True
 
 
+def detect_creatures(leitura, img=None):
+    """
+    Criaturas na tela do jogo, como offsets (dx, dy) em SQM a partir do
+    personagem. O personagem em si nao entra na lista.
+
+    O que se procura e a BARRINHA DE VIDA que o cliente desenha sobre cada
+    criatura: uma faixa fina e saturada de 18 a 34 px (medido: 28x2, cor
+    (0,95,0) com vida cheia). Nome nao serve - seria OCR -, e o sprite da
+    criatura muda de quadro a quadro pela animacao.
+
+    A criatura fica um quadrado abaixo da propria barra. O personagem tem barra
+    igual, e ela e descartada por estar no quadrado do meio do viewport, onde
+    ele sempre esta.
+    """
+    vx, vy, vw, vh = GAME_VIEW
+    if img is None:
+        cx, cy, _, _ = client_rect(leitura)
+        img = grab((cx + vx, cy + vy, vw, vh))
+    img = img.astype(np.int16)
+    sat = img.max(axis=2) - img.min(axis=2)
+    faixa = (sat > 60) & (img.max(axis=2) > 90)
+
+    # linhas com uma corrida do tamanho de barra de criatura
+    linhas = {}
+    for y in range(faixa.shape[0]):
+        for ini, fim in _runs(faixa[y]):
+            if CREATURE_BAR_W[0] <= fim - ini + 1 <= CREATURE_BAR_W[1]:
+                linhas.setdefault(y, []).append((ini, fim - ini + 1))
+
+    barras = []
+    for y in sorted(linhas):
+        for ini, larg in linhas[y]:
+            for barra in barras:
+                if y - barra["y1"] <= 1 and abs(barra["x"] - ini) <= 2:
+                    barra["y1"] = y
+                    break
+            else:
+                barras.append({"x": ini, "larg": larg, "y0": y, "y1": y})
+    barras = [b for b in barras
+              if CREATURE_BAR_H[0] <= b["y1"] - b["y0"] + 1 <= CREATURE_BAR_H[1]]
+
+    # o personagem esta sempre no quadrado do meio
+    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+    criaturas = []
+    for barra in barras:
+        centro_x = barra["x"] + barra["larg"] / 2
+        col = int(centro_x // TILE_PX)
+        lin = int(barra["y0"] // TILE_PX) + CREATURE_BAR_ABOVE
+        offset = (col - meio_col, lin - meio_lin)
+        if offset == (0, 0):
+            continue                     # e o proprio personagem
+        criaturas.append(offset)
+    return criaturas
+
+
+def longe_o_bastante(criaturas, distancia=None):
+    """Distancia do bicho mais perto, em SQM (o Tibia mede pelo maior eixo)."""
+    distancia = KITE_DIST if distancia is None else distancia
+    if not criaturas:
+        return None
+    return min(max(abs(dx), abs(dy)) for dx, dy in criaturas)
+
+
+def passo_de_fuga(criaturas, distancia=None):
+    """
+    Para que lado andar para ficar longe de todos, ou None se ja esta bom.
+
+    Escolhe entre os quatro lados aquele que deixa o bicho mais perto o mais
+    longe possivel. Sem melhora nenhuma, devolve None - encurralado, andar so
+    piora.
+    """
+    distancia = KITE_DIST if distancia is None else distancia
+    perto = longe_o_bastante(criaturas, distancia)
+    if perto is None or perto >= distancia:
+        return None
+
+    def nota_de(lista):
+        """Quao boa e uma posicao: primeiro o bicho mais perto, depois a soma.
+
+        A soma serve de desempate: entre dois lados que deixam o mais perto na
+        mesma distancia, vale o que abre mais espaco no conjunto.
+        """
+        return (longe_o_bastante(lista, distancia),
+                sum(max(abs(dx), abs(dy)) for dx, dy in lista))
+
+    melhor, melhor_nota = None, nota_de(criaturas)
+    for tecla, (px, py) in KITE_PASSOS.items():
+        if (px, py) in criaturas:
+            continue                     # o quadrado ja tem bicho: nao se anda
+        depois = [(dx - px, dy - py) for dx, dy in criaturas]
+        nota = nota_de(depois)
+        if nota > melhor_nota:
+            melhor, melhor_nota = tecla, nota
+    return melhor
+
+
+def kite(leitura, teclado, kite_cd):
+    """
+    Anda para longe dos bichos, mantendo KITE_DIST de todos - inclusive do alvo.
+
+    Anda de SETA, um quadrado por vez: clique no mapa daria um trajeto inteiro,
+    que num kite e o contrario do que se quer. Seta tambem forca o cliente para
+    "stand", o que e o modo certo para quem esta kitando.
+    """
+    if not kite_cd.ready():
+        return False
+    criaturas = detect_creatures(leitura)
+    tecla = passo_de_fuga(criaturas)
+    perto = longe_o_bastante(criaturas)
+    if tecla is None:
+        if perto is not None and perto < KITE_DIST:
+            print(f"[kite] encurralado: o bicho mais perto esta a {perto} SQM "
+                  f"e nenhum lado melhora")
+        return False
+    if not teclado.isActive:
+        focus_window(teclado)
+    pyautogui.press(tecla)
+    kite_cd.mark()
+    print(f"[kite] {len(criaturas)} bicho(s) na tela, o mais perto a {perto} "
+          f"SQM: ando para {tecla}")
+    return True
+
+
+def show_kite(segundos=20.0):
+    """
+    Diagnostico do kite: mostra o que o bot enxerga na tela do jogo.
+
+    Imprime as criaturas achadas em SQM a partir do personagem, a distancia da
+    mais perto e o passo que o kite daria - SEM apertar tecla nenhuma. Salva
+    tambem um PNG com a grade desenhada, para conferir se GAME_VIEW e TILE_PX
+    batem com o seu layout: o quadrado do meio tem de cair no personagem.
+    """
+    leitura, _teclado = setup_windows()
+    if not leitura:
+        return
+    vx, vy, vw, vh = GAME_VIEW
+    print(f"viewport {vw}x{vh} em ({vx},{vy}), quadrado de {TILE_PX}px "
+          f"-> grade {vw // TILE_PX}x{vh // TILE_PX}")
+    print(f"mantendo {KITE_DIST} SQM. Ctrl+Alt+S para sair." + chr(10))
+
+    cx, cy, _, _ = client_rect(leitura)
+    fim = time.time() + segundos
+    salvo = False
+    while time.time() < fim and not keyboard.is_pressed(KILL_KEY):
+        img = grab((cx + vx, cy + vy, vw, vh))
+        criaturas = detect_creatures(leitura, img=img)
+        perto = longe_o_bastante(criaturas)
+        passo = passo_de_fuga(criaturas)
+        print(f"  {len(criaturas)} criatura(s) {criaturas} | mais perto: "
+              f"{perto} SQM | passo: {passo or '-'}          ",
+              end=chr(13), flush=True)
+        if criaturas and not salvo:
+            desenho = img.copy()
+            meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+            for i in range(vw // TILE_PX + 1):          # grade
+                desenho[:, min(i * TILE_PX, vw - 1)] = (60, 60, 60)
+            for j in range(vh // TILE_PX + 1):
+                desenho[min(j * TILE_PX, vh - 1), :] = (60, 60, 60)
+            for dx, dy in criaturas:                    # criaturas em vermelho
+                x0 = (meio_col + dx) * TILE_PX
+                y0 = (meio_lin + dy) * TILE_PX
+                desenho[y0:y0 + TILE_PX, x0:x0 + 3] = (255, 0, 0)
+                desenho[y0:y0 + 3, x0:x0 + TILE_PX] = (255, 0, 0)
+            x0, y0 = meio_col * TILE_PX, meio_lin * TILE_PX   # personagem
+            desenho[y0:y0 + TILE_PX, x0:x0 + 3] = (0, 255, 255)
+            desenho[y0:y0 + 3, x0:x0 + TILE_PX] = (0, 255, 255)
+            arquivo = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "kite_visto.png")
+            mss.tools.to_png(np.ascontiguousarray(desenho).tobytes(),
+                             (vw, vh), output=arquivo)
+            print(chr(10) + f"[kite] grade desenhada em {arquivo}: o quadrado "
+                  f"ciano tem de cair no personagem e os vermelhos nos bichos")
+            salvo = True
+        time.sleep(0.3)
+    print()
+    restore_windows()
+
+
 def parar_de_andar(leitura, teclado=None):
     """
     Cancela o trajeto em andamento, por TECLA.
@@ -2698,6 +2907,16 @@ def run_bot():
 
     print(f"Bot iniciado: lendo de '{leitura.title}', teclas em '{teclado.title}'.")
     print("Ctrl+Alt+S para parar.")
+    if ATTACK_MODE == "stand":
+        print(f"[luta] modo stand: paro com {STOP_WALK_KEY} e nao saio do lugar")
+    elif ATTACK_MODE == "chase":
+        print("[luta] modo chase: nao mando tecla de parada (ela cancelaria o "
+              "follow); ponha o cliente em chase")
+    elif ATTACK_MODE == "kite":
+        print(f"[luta] modo kite: ando de seta para manter {KITE_DIST} SQM de "
+              f"todo bicho na tela")
+    else:
+        print(f"[luta] modo {ATTACK_MODE!r} desconhecido; tratando como stand")
     heal_cd = Cooldown(HEAL_COOLDOWN)                 # sem variacao: cura na hora
     mana_cd = Cooldown(MANA_COOLDOWN, 0.10)
     attack_cd = Cooldown(ATTACK_COOLDOWN, 0.15)
@@ -2711,6 +2930,7 @@ def run_bot():
     caminho = {"pontos": load_waypoints(), "indice": 0, "tentativas": 0,
                "rota": rota_gravada}
     click_cd = Cooldown(WALK_CLICK_COOLDOWN, 0.30)
+    kite_cd = Cooldown(KITE_COOLDOWN, 0.10)
     key_cd = Cooldown(WALK_KEY_COOLDOWN, 0.15)
     auto_cds = autocast_cooldowns()
     if auto_cds:
@@ -2835,13 +3055,17 @@ def run_bot():
         # acabou de sair - o bot apertava, perdia o alvo e so reengajava depois
         # de ATTACK_CONFIRM leituras.
         if ENABLE_WALK and (atacaveis or alvo) and not parou_por_bicho:
-            parou = parar_de_andar(leitura, teclado)
+            # a tecla de parada e do modo STAND. Em chase ela cancelaria o
+            # follow do cliente junto com o ataque, e em kite quem manda no
+            # movimento sao as setas.
+            parou = (parar_de_andar(leitura, teclado)
+                     if ATTACK_MODE == "stand" else False)
             caminho["cliques"] = 0
             parou_por_bicho = True
             print(f"[walk] {atacaveis} atacavel(is) na lista: "
                   + (f"trajeto cancelado com {STOP_WALK_KEY}, lutando primeiro"
                      if parou else
-                     "paro de clicar (sem tecla de parada), lutando primeiro"))
+                     f"paro de clicar, lutando em modo {ATTACK_MODE}"))
             if parou:
                 # o ataque so depois que a parada foi processada: as duas teclas
                 # sairiam com milissegundos de diferenca e o cliente poderia
@@ -2889,6 +3113,9 @@ def run_bot():
                 # que o bicho empurra nao conta como visita.
                 track_marks(leitura, caminho, andando=not lutando,
                             odo=odo)
+            if lutando and ATTACK_MODE == "kite":
+                kite(leitura, teclado, kite_cd)
+
             # O trajeto so volta depois de a lista ficar limpa por VARIAS
             # leituras seguidas. Uma leitura ruim no meio da briga nao pode
             # virar clique no mapa: no cliente, clique no mapa durante o ataque
@@ -2928,6 +3155,8 @@ if __name__ == "__main__":
                         help="Mede a escala do minimapa (px por SQM) no zoom atual.")
     parser.add_argument("--battle", action="store_true",
                         help="Diagnostico da Battle List: entradas e alvo atual.")
+    parser.add_argument("--kite", action="store_true",
+                        help="Diagnostico do kite: criaturas na tela em SQM.")
     parser.add_argument("--obs", action="store_true",
                         help="Ler do projetor do OBS em vez da janela do Tibia.")
     args = parser.parse_args()
@@ -2939,6 +3168,8 @@ if __name__ == "__main__":
             show_bars()
         elif args.battle:
             show_battle()
+        elif args.kite:
+            show_kite()
         elif args.record:
             record_waypoints()
         elif args.marcas:
