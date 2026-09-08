@@ -278,6 +278,30 @@ linha reta.
 Nos dois modos o alvo só muda ao **chegar** na marca, conferido por pixel: a
 cruz do personagem tem de estar debaixo dela.
 
+### Paralisia
+
+No Tibia a paralisia derruba a velocidade a quase zero, e sai de duas formas:
+qualquer **magia de cura** remove, e **haste** (utani hur) sobrepõe a
+velocidade. Os bichos desta cave — bonelord, gazer — paralisam.
+
+O bot **não precisa reconhecer ícone** para saber: paralisado, ele manda o passo
+e não sai do lugar, que do ponto de vista dele é idêntico a bater na pedra. O
+que separa os dois é **quantos lados falham** — pedra é de um lado, paralisia é
+de todos. Dois sinais, e basta um:
+
+- `PARALISIA_FALHAS` passos **seguidos** sem sair do lugar, em pelo menos dois
+  lados — o sinal rápido, que dispara em 3 leituras;
+- `PARALISIA_LADOS` lados bloqueados ao mesmo tempo — o lento, para quando o
+  bot alternou de lado antes.
+
+Detectada, ele conjura `PARALISIA_HOTKEY` e **limpa os bloqueios**: eles eram da
+paralisia, não de pedra, e deixá-los de pé faria o bot passar os segundos
+seguintes achando que está cercado de parede.
+
+A contrapartida, dita com honestidade: encurralado de verdade — num canto, com
+bicho fechando os lados — dá o mesmo sinal, e o bot conjura sem precisar.
+Conjurar a mais custa mana; não conjurar deixa o personagem parado apanhando.
+
 ### Cura
 
 A emergência tem **cooldown próprio**. Compartilhando o da cura normal, uma cura
@@ -380,6 +404,7 @@ python testes/testa_teclas_config.py  # trocar as teclas das diagonais não derr
 python testes/testa_erro_no_laco.py   # erro isolado não mata a caçada
 python testes/testa_loot.py           # vai até o corpo, saqueia e volta para a rota
 python testes/testa_heal.py           # cura começando com vida baixa; emergência na frente
+python testes/testa_paralisia.py      # separa pedra de paralisia e conjura a cura
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
 ```
 

@@ -12,7 +12,7 @@
   "MANA_THRESHOLD": 200.0,
   "MANA_COOLDOWN": 1.2,
   "ENABLE_ATTACK": true,
-  "ATTACK_MODE": "stand",
+  "ATTACK_MODE": "chase",
   "ATTACK_HOTKEY": "space",
   "ATTACK_COOLDOWN": 0.6,
   "ATTACK_CONFIRM": 4,
@@ -25,6 +25,11 @@
   "KITE_DIAGONAIS": true,
   "KITE_DIAGONAIS_TECLAS": "cima-esq,cima-dir,baixo-esq,baixo-dir",
   "PARAR_SE_MUDAR_ANDAR": true,
+  "ENABLE_LOOT": true,
+  "LOOT_HOTKEY": "-",
+  "LOOT_DIST": 1,
+  "LOOT_TENTATIVAS": 3,
+  "LOOT_PRAZO": 8.0,
   "ENABLE_SPELL": true,
   "SPELL_HOTKEY": "f1",
   "SPELL_COOLDOWN": 2.0,
@@ -41,7 +46,7 @@
   "WALK_CLICK_COOLDOWN": 1.5,
   "WALK_MAX_CLICKS": 4,
   "MINIMAP_PX_SQM": 2.0,
-  "WAYPOINTS_FILE": "rotas/padrao.json",
+  "WAYPOINTS_FILE": "C:\\Users\\cadup\\OneDrive\\Desktop\\analyses\\rotas\\elder.json",
   "USE_ROUTE_ORDER": true,
   "ENABLE_AUTOCAST": true,
   "AUTOCAST_MANA_FLOOR": 18.0,
@@ -71,10 +76,9 @@
       "intervalo": 300.0
     }
   ],
-  "ENABLE_LOOT": true,
-  "LOOT_HOTKEY": "-",
-  "LOOT_DIST": 1,
-  "LOOT_TENTATIVAS": 3,
-  "LOOT_PRAZO": 8.0,
-  "LOOT_COOLDOWN": 0.45
+  "ENABLE_PARALISIA": true,
+  "PARALISIA_HOTKEY": "f4",
+  "PARALISIA_LADOS": 3,
+  "PARALISIA_COOLDOWN": 2.0,
+  "PARALISIA_FALHAS": 3
 }

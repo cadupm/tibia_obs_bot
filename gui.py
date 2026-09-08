@@ -88,6 +88,14 @@ ABAS = [
             ("PARAR_SE_MUDAR_ANDAR", "Parar se mudar de andar", bool,
              "caiu em escada ou buraco: para tudo"),
         ]),
+        ("Paralisia", "ENABLE_PARALISIA", [
+            ("PARALISIA_HOTKEY", "Magia que cura", str,
+             "exura ou utani hur: as duas tiram paralisia"),
+            ("PARALISIA_LADOS", "Lados travados p/ suspeitar", int,
+             "pedra e de um lado; paralisia e de todos"),
+            ("PARALISIA_COOLDOWN", "Intervalo entre tentativas", float,
+             "segundos"),
+        ]),
         ("Loot", "ENABLE_LOOT", [
             ("LOOT_HOTKEY", "Tecla de saque", str,
              "a do saque rapido, no cliente"),

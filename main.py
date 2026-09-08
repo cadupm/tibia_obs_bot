@@ -225,6 +225,25 @@ WALK_TIMEOUT = 15.0             # s no maximo por trecho
 # menu, e o corpo nao tem barra de vida para o bot saber onde ele esta. O que o
 # bot faz e a parte que falta: CHEGAR PERTO. Em stand o personagem ja esta
 # colado no corpo; em kite ele esta a KITE_DIST de distancia, longe demais.
+# PARALISIA. No Tibia ela derruba a velocidade a quase zero, e sai de duas
+# formas: qualquer MAGIA DE CURA remove, e HASTE (utani hur) sobrepoe a
+# velocidade. Bonelord, Gazer e companhia paralisam - sao exatamente os bichos
+# desta cave.
+#
+# O bot nao precisa reconhecer icone para saber: paralisado, TODO lado parece
+# parede. A conta de "o passo nao saiu do lugar", que ja existe para desviar de
+# pedra, e o sinal - com a diferenca de que na paralisia falham todos os lados,
+# e nao um.
+ENABLE_PARALISIA = True
+PARALISIA_HOTKEY = "f4"         # a tecla da magia que cura: exura ou utani hur
+PARALISIA_FALHAS = 3            # passos SEGUIDOS sem sair do lugar, em pelo
+                                # menos dois lados: o sinal rapido, que nao
+                                # espera cada lado virar "parede" sozinho
+PARALISIA_LADOS = 3             # lados diferentes que tem de falhar para nao
+                                # ser pedra: pedra e de um lado, paralisia e de
+                                # todos
+PARALISIA_COOLDOWN = 2.0        # s entre tentativas de curar
+
 ENABLE_LOOT = True
 LOOT_HOTKEY = "-"               # a tecla de saque rapido, no cliente
 LOOT_DIST = 1                   # SQM: daqui o saque alcanca o corpo
@@ -2852,6 +2871,11 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
     if ultimo is not None and odo is not None:
         if tuple(odo.pos) == tuple(estado.get("pos_antes", ())):
             falhas[ultimo] = falhas.get(ultimo, 0) + 1
+            # conta tambem as falhas SEGUIDAS em qualquer lado: e o sinal
+            # rapido de paralisia, que nao precisa esperar cada lado virar
+            # "parede" por conta propria
+            estado["falhou_seguidas"] = estado.get("falhou_seguidas", 0) + 1
+            estado.setdefault("lados_falhos", set()).add(ultimo)
             if falhas[ultimo] >= KITE_FALHAS:
                 # ESPERA CRESCENTE: cada vez que o mesmo lado falha de novo, ele
                 # fica fora por mais tempo. Parede nao muda, e testar de novo a
@@ -2869,6 +2893,8 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
         else:
             falhas[ultimo] = 0
             estado.setdefault("vezes", {})[ultimo] = 0
+            estado["falhou_seguidas"] = 0      # andou: nao esta paralisado
+            estado["lados_falhos"] = set()
 
     vx, vy, vw, vh = GAME_VIEW
     cx, cy, _, _ = client_rect(leitura)
@@ -3207,6 +3233,58 @@ def show_kite(segundos=20.0):
         time.sleep(0.3)
     print()
     restore_windows()
+
+
+def cura_paralisia(teclado, estado, paralisia_cd):
+    """
+    Reconhece a paralisia pelo movimento que nao acontece, e conjura a cura.
+
+    Paralisado, o personagem manda o passo e nao sai do lugar - do ponto de
+    vista do bot, identico a bater na pedra. O que separa os dois casos e
+    QUANTOS lados falham: pedra e de um lado, paralisia e de todos. Por isso o
+    sinal e PARALISIA_LADOS lados diferentes bloqueados ao mesmo tempo.
+
+    Nao depende de achar icone na tela, e por isso funciona em qualquer layout.
+    A contrapartida honesta: encurralado de verdade - num canto, com bicho
+    fechando os lados - da o mesmo sinal, e o bot conjura a cura sem precisar.
+    Conjurar a mais custa mana; nao conjurar deixa o personagem parado levando
+    dano, entao o erro barato e esse.
+
+    Devolve True se conjurou.
+    """
+    if not ENABLE_PARALISIA or not PARALISIA_HOTKEY:
+        return False
+    bloqueados = estado.get("bloqueados", {})
+    agora = time.time()
+    presos = [t for t, ate in bloqueados.items() if ate > agora]
+    # Dois sinais, e basta um. O primeiro e o rapido: passos SEGUIDOS que nao
+    # saem do lugar, em lados diferentes - paralisado, o primeiro passo de cada
+    # lado ja falha, e nao ha por que esperar cada lado virar "parede" por conta
+    # propria (isso levava seis leituras, quase tres segundos parado apanhando).
+    seguidas = estado.get("falhou_seguidas", 0)
+    lados = len(estado.get("lados_falhos", ()))
+    rapido = seguidas >= PARALISIA_FALHAS and lados >= 2
+    if not (rapido or len(presos) >= PARALISIA_LADOS):
+        return False
+    if not paralisia_cd.ready():
+        return False
+    if not teclado.isActive:
+        focus_window(teclado)
+    pyautogui.press(PARALISIA_HOTKEY)
+    paralisia_cd.mark()
+    # os bloqueios eram da paralisia, nao de pedra: se ficarem, o bot passa
+    # os proximos segundos achando que esta cercado de parede
+    bloqueados.clear()
+    estado["falhas"] = {}
+    estado["vezes"] = {}
+    estado["falhou_seguidas"] = 0
+    estado["lados_falhos"] = set()
+    motivo = (f"{seguidas} passos seguidos sem sair do lugar, em {lados} lados"
+              if rapido else
+              f"{len(presos)} lados travados ao mesmo tempo "
+              f"({', '.join(presos)})")
+    print(f"[paralisia] {motivo}: parece paralisia, conjuro {PARALISIA_HOTKEY}")
+    return True
 
 
 def loot(leitura, teclado, estado, loot_cd, odo=None):
@@ -3646,6 +3724,7 @@ def run_bot():
     click_cd = Cooldown(WALK_CLICK_COOLDOWN, 0.30)
     kite_cd = Cooldown(KITE_COOLDOWN, 0.10)
     loot_cd = Cooldown(LOOT_COOLDOWN, 0.10)
+    paralisia_cd = Cooldown(PARALISIA_COOLDOWN, 0.10)
     key_cd = Cooldown(WALK_KEY_COOLDOWN, 0.15)
     auto_cds = autocast_cooldowns()
     if auto_cds:
@@ -3837,6 +3916,11 @@ def run_bot():
             # 4) kite: e comportamento de COMBATE, nao de rota - roda mesmo com o
             # andar desligado. Ficava dentro do bloco da rota e nao acontecia nada
             # para quem so quer o bot lutando.
+            # PARALISADO NAO SE ANDA: a cura vem antes de qualquer passo,
+            # senao o bot gasta a leitura tentando andar sem sair do lugar.
+            if ENABLE_PARALISIA:
+                cura_paralisia(teclado, estado_kite, paralisia_cd)
+
             if lutando and ATTACK_MODE == "kite":
                 # bicho na lista mas fora da tela: a tela alcanca 7 SQM de lado e 5
                 # de altura, e o que corre alem disso o bot nao ve. Sem este aviso
