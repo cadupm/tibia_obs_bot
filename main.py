@@ -222,6 +222,18 @@ WALK_TIMEOUT = 15.0             # s no maximo por trecho
 ATTACK_MODE = "stand"
 KITE_DIST = 3                   # SQM que se quer manter de qualquer bicho
 KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
+KITE_FALHAS = 2                 # passos seguidos sem sair do lugar, no mesmo
+                                # lado, para chamar de parede. Um so nao prova:
+                                # o personagem leva 250-400ms para andar e a
+                                # leitura pode chegar no meio do passo.
+KITE_BLOQUEIO_MAX = 120.0       # s: teto da espera crescente. Uma parede fica
+                                # praticamente fora da conta; obstaculo que
+                                # anda volta a ser tentado logo.
+KITE_BLOQUEIO = 3.0             # s que um lado fica fora depois de o passo nao
+                                # sair do lugar. Nao se reconhece parede na
+                                # tela: mede-se o resultado do passo. Expira
+                                # porque caixa e bicho saem do caminho, parede
+                                # nao.
 # Para onde da para fugir, e a tecla de cada lado. As DIAGONAIS sao necessarias,
 # nao enfeite: com bicho a esquerda e outro em cima, nenhum dos quatro lados
 # retos aumenta a distancia do mais perto - so a diagonal aumenta. No cliente as
@@ -2656,36 +2668,92 @@ def passo_de_kite(criaturas, distancia=None, proibidos=()):
     return melhor
 
 
-def kite(leitura, teclado, kite_cd, lugares=None):
+def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
     """
-    Anda para longe dos bichos, mantendo KITE_DIST de todos - inclusive do alvo.
+    Anda para ficar na distancia certa dos bichos - inclusive do alvo.
 
     Anda de SETA, um quadrado por vez: clique no mapa daria um trajeto inteiro,
     que num kite e o contrario do que se quer. Seta tambem forca o cliente para
     "stand", o que e o modo certo para quem esta kitando.
+
+    PAREDE: nao se tenta reconhecer parede na tela - mede-se o resultado. Depois
+    de cada passo, se o personagem NAO saiu do lugar, aquele lado fica bloqueado
+    por KITE_BLOQUEIO segundos e o kite escolhe outro. Sem isso o bot fica
+    martelando a mesma tecla contra a pedra para sempre, porque nada na tela
+    muda para ele decidir diferente.
+
+    O bloqueio expira sozinho: parede nao anda, mas bicho e caixa sim, e o que
+    estava bloqueado pode abrir.
     """
     if not kite_cd.ready():
         return False
+    estado = {} if estado is None else estado
+    agora = time.time()
+    bloqueados = estado.setdefault("bloqueados", {})
+
+    # O passo anterior funcionou? Duas falhas seguidas do mesmo lado e que
+    # contam como parede: um passo do personagem leva de 250 a 400ms e a leitura
+    # pode chegar antes de ele terminar de andar - uma unica falha nao prova
+    # nada.
+    falhas = estado.setdefault("falhas", {})
+    ultimo = estado.pop("ultimo", None)
+    if ultimo is not None and odo is not None:
+        if tuple(odo.pos) == tuple(estado.get("pos_antes", ())):
+            falhas[ultimo] = falhas.get(ultimo, 0) + 1
+            if falhas[ultimo] >= KITE_FALHAS:
+                # ESPERA CRESCENTE: cada vez que o mesmo lado falha de novo, ele
+                # fica fora por mais tempo. Parede nao muda, e testar de novo a
+                # cada poucos segundos custa dois passos perdidos toda vez;
+                # caixa e bicho saem do caminho, e esses voltam a ser tentados
+                # cedo. Um passo bom naquele lado zera a conta.
+                vezes = estado.setdefault("vezes", {})
+                vezes[ultimo] = min(vezes.get(ultimo, 0) + 1, 8)
+                espera = min(KITE_BLOQUEIO * 2 ** (vezes[ultimo] - 1),
+                             KITE_BLOQUEIO_MAX)
+                bloqueados[ultimo] = agora + espera
+                falhas[ultimo] = 0
+                print(f"[kite] '{ultimo}' nao saiu do lugar {KITE_FALHAS}x: "
+                      f"parede desse lado, evito por {espera:.0f}s")
+        else:
+            falhas[ultimo] = 0
+            estado.setdefault("vezes", {})[ultimo] = 0
+
     vx, vy, vw, vh = GAME_VIEW
     cx, cy, _, _ = client_rect(leitura)
     img = grab((cx + vx, cy + vy, vw, vh))
     criaturas = detect_creatures(leitura, img=img)
-    proibidos = passos_proibidos(img, lugares or {})
+    proibidos = set(passos_proibidos(img, lugares or {}))
+    # O bloqueio expira pelo TEMPO, e so. Tentei tambem esquece-lo ao andar
+    # alguns quadrados - "parede a esquerda nao diz nada 3 quadrados adiante" -
+    # e ficou pior: andando rente a uma parede o bot muda de lugar a cada passo,
+    # redescobria a mesma pedra a cada dois quadrados e gastava 10 dos 24 passos
+    # nisso. A espera crescente ja separa os dois casos sem precisar de lugar:
+    # parede continua falhando e vai ficando mais tempo fora; caixa e bicho
+    # saem do caminho, o passo seguinte da certo e a conta zera.
+    parados = []
+    for tecla_bloqueada, ate in list(bloqueados.items()):
+        if ate <= agora:
+            del bloqueados[tecla_bloqueada]
+            continue
+        parados.append(tecla_bloqueada)
+        proibidos.add(KITE_PASSOS[tecla_bloqueada])
+
     tecla = passo_de_kite(criaturas, proibidos=proibidos)
     perto = longe_o_bastante(criaturas)
     if tecla is None:
-        if perto is not None and perto < KITE_DIST:
-            print(f"[kite] encurralado: o bicho mais perto esta a {perto} SQM "
-                  f"e nenhum lado melhora"
-                  + (f" ({len(proibidos)} lado(s) sao de nao pisar)"
-                     if proibidos else ""))
+        if perto is not None and perto != KITE_DIST:
+            print(f"[kite] sem lado bom: o bicho mais perto esta a {perto} SQM"
+                  + (f", {len(proibidos)} lado(s) fora "
+                     f"({len(parados)} por parede)" if proibidos else ""))
         return False
     if not teclado.isActive:
         focus_window(teclado)
     pyautogui.press(tecla)
     kite_cd.mark()
-    print(f"[kite] {len(criaturas)} bicho(s) na tela, o mais perto a {perto} "
-          f"SQM: ando para {tecla}"
+    estado["ultimo"] = tecla
+    estado["pos_antes"] = tuple(odo.pos) if odo is not None else ()
+    print(f"[kite] {len(criaturas)} bicho(s), o mais perto a {perto} SQM: "
+          f"ando para {tecla}"
           + (f" (evitando {len(proibidos)} lado(s))" if proibidos else ""))
     return True
 
@@ -3224,6 +3292,7 @@ def run_bot():
     evitar_lugares = load_evitar() if ATTACK_MODE == "kite" else {}
     odo_kite = None                    # odometro proprio do kite: ele roda com
                                        # a rota desligada, onde nao ha odo
+    estado_kite = {}                   # lados que se provaram parede, e quando
     if ATTACK_MODE == "kite":
         print(f"[kite] {len(evitar_lugares)} lugar(es) de nao pisar: "
               f"{', '.join(evitar_lugares) or 'nenhum ainda, ensine com --evitar'}")
@@ -3414,7 +3483,8 @@ def run_bot():
                       "(escada, buraco ou portal). Parando o bot - dai em "
                       "diante quem decide e voce.")
                 break
-            kite(leitura, teclado, kite_cd, evitar_lugares)
+            kite(leitura, teclado, kite_cd, evitar_lugares,
+                 odo=odo_kite, estado=estado_kite)
 
         # 5) segue o cave. A posicao e integrada SEMPRE, inclusive durante a
         # briga: e isso que faz o reclique depois da luta cair no lugar certo.

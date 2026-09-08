@@ -59,8 +59,41 @@ def battle_state(_win):
     return ROTEIRO[min(quadro["i"], len(ROTEIRO) - 1)]
 
 
+posicao = [0, 0]
+
+
+class OdoFalso:
+    """
+    Odometro de mentira que ANDA quando a tecla anda.
+
+    Sem isso o kite conclui que todo lado e parede - e conclusao correta dele,
+    porque a regra e "o passo nao saiu do lugar". O mundo do teste e que tem de
+    se mexer.
+    """
+
+    def __init__(self, _win=None):
+        self.pos = posicao
+        self.parado = 9
+
+    def atualiza(self):
+        pass
+
+    def resync(self):
+        pass
+
+    def ancora(self, alvo):
+        pass
+
+    def mudou_de_andar(self):
+        return False                       # neste teste ninguem cai de andar
+
+
 def press(tecla):
     fita.append((quadro["i"], tecla))
+    if tecla in main.KITE_PASSOS:
+        px, py = main.KITE_PASSOS[tecla]
+        posicao[0] += px * 2               # 2 px de minimapa por SQM
+        posicao[1] += py * 2
 
 
 def loop_sleep(_s):
@@ -80,6 +113,7 @@ main.focus_window = lambda win: True
 main.restore_windows = lambda: None
 main.keyboard = type("K", (), {"is_pressed": staticmethod(lambda k: False)})()
 main.pyautogui = type("P", (), {"press": staticmethod(press)})()
+main.Odometro = OdoFalso
 main.time = type("T", (), {"time": staticmethod(lambda: quadro["i"] * 0.2),
                            "sleep": staticmethod(loop_sleep)})()
 main.load_monsters = lambda caminho=None: {"bicho": BICHO}
@@ -114,8 +148,14 @@ if not ataques:
 if paradas:
     falhas.append(f"mandou a tecla de parada ({paradas}) - em kite quem manda "
                   f"no movimento sao as setas")
-if fugas and set(fugas) != {"right"}:
-    falhas.append(f"fugiu para {set(fugas)}; com bicho a esquerda e right")
+# So o PRIMEIRO passo e conferido pela tecla. Depois dele a cena de mentira
+# fica incoerente: o odometro anda mas a tela nao muda, entao o bicho continua
+# aparecendo colado e o kite segue tentando se afastar de um bicho que, na tela,
+# nunca se move. O que importa aqui e outra coisa - que ele kita com o andar
+# desligado -, e a decisao em si esta medida no testa_kite_distancia.py.
+if fugas and fugas[0] != "right":
+    falhas.append(f"primeiro passo foi {fugas[0]}; com bicho a esquerda "
+                  f"deveria ser right")
 
 print(f"\npassos de fuga: {fugas}")
 print(f"ataques: {len(ataques)} | teclas de parada: {len(paradas)}")

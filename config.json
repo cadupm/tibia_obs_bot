@@ -18,9 +18,10 @@
   "ATTACK_CONFIRM": 4,
   "TARGET_LOST_MAX": 4.0,
   "TARGET_GONE_READS": 3,
-  "KITE_DIST": 3,
+  "KITE_DIST": 4,
   "KITE_COOLDOWN": 0.35,
   "KITE_DIAGONAIS": true,
+  "PARAR_SE_MUDAR_ANDAR": true,
   "ENABLE_SPELL": true,
   "SPELL_HOTKEY": "f1",
   "SPELL_COOLDOWN": 2.0,
@@ -67,5 +68,7 @@
       "intervalo": 300.0
     }
   ],
-  "PARAR_SE_MUDAR_ANDAR": true
+  "KITE_BLOQUEIO": 3.0,
+  "KITE_FALHAS": 2,
+  "KITE_BLOQUEIO_MAX": 120.0
 }

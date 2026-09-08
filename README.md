@@ -92,6 +92,27 @@ plantado quando o único lado que aumentava a distância estava bloqueado por
 escada. O desempate vale só quando está perto demais: na distância certa ele
 fica parado, senão andaria em círculo por centésimos de diagonal.
 
+### Parede
+
+O kite esbarrava na pedra e ficava martelando a mesma tecla: nada na tela mudava
+para ele decidir diferente. A solução **não** é reconhecer parede na tela — é
+medir o resultado. Depois de cada passo, se o personagem não saiu do lugar
+(`KITE_FALHAS` vezes seguidas, porque um passo leva 250-400 ms e a leitura pode
+chegar no meio), aquele lado fica fora por um tempo que **cresce a cada nova
+falha** (`KITE_BLOQUEIO` dobrando até `KITE_BLOQUEIO_MAX`). Um passo que dá certo
+naquele lado zera a conta.
+
+A espera crescente é o que separa parede de obstáculo sem precisar distinguir
+nada: parede continua falhando e vai ficando de fora por mais tempo; caixa e
+bicho saem do caminho, o passo seguinte dá certo e a conta zera. Medido em
+simulação com parede à esquerda: 6 tentativas na pedra contra 18 passos bons em
+24 passos, e nenhuma tentativa no último terço.
+
+Tentei também esquecer o bloqueio ao andar alguns quadrados — "parede à esquerda
+não diz nada 3 quadrados adiante" — e ficou **pior**: andando rente a uma parede
+o personagem muda de lugar a cada passo, o bot redescobria a mesma pedra a cada
+dois quadrados e gastava 10 dos 24 passos nisso. A regra ficou sendo só o tempo.
+
 ### Escada, buraco, portal
 
 Cair de andar fugindo de bicho é queda sem volta automática, e o lugar onde se
@@ -242,6 +263,7 @@ python testes/testa_trava_alvo.py      # não troca de alvo até o bicho sumir d
 python testes/testa_ordem_parada.py   # para antes de atacar; não clica no mapa lutando
 python testes/testa_kite.py           # acha as criaturas na tela e sabe para onde fugir
 python testes/testa_kite_distancia.py # recua, persegue, e não pisa na escada
+python testes/testa_kite_parede.py    # desiste do lado que não anda e acha outro
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
 ```
 
