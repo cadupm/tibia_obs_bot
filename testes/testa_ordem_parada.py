@@ -23,17 +23,25 @@ import main
 BICHO = np.full((17, 20, 3), 40, dtype=np.uint8)
 BICHO[3:8, 3:8] = (200, 30, 30)
 
+ESCURO = (BICHO.astype(float) * 0.35).astype(np.uint8)   # bicho quase morto
+OUTRO = np.full((17, 20, 3), 40, dtype=np.uint8)         # bicho nao aprendido
+OUTRO[9:14, 9:15] = (30, 200, 30)
+
 VAZIA = (0, False, None, [], None)
 COM_BICHO = (1, False, None, [BICHO], None)          # na lista, sem moldura
 ENGAJADO = (1, True, 0.9, [BICHO], BICHO)            # moldura vermelha
 SUMIU_DA_LEITURA = (0, False, None, [], None)        # leitura ruim no meio da luta
+QUASE_MORTO = (1, False, None, [ESCURO], None)       # sprite escurecido
+DESCONHECIDO = (1, False, None, [OUTRO], None)       # nao esta na lista de bichos
 
 ROTEIRO = ([VAZIA] * 3                     # andando
            + [COM_BICHO] * 5               # bicho aparece
            + [ENGAJADO] * 6                # engajou
            + [SUMIU_DA_LEITURA] * 4        # leitura ruim: a entrada piscou
            + [ENGAJADO] * 4                # voltou
-           + [VAZIA] * 6)                  # morreu de verdade
+           + [QUASE_MORTO] * 4             # quase morto: o cliente escurece
+           + [DESCONHECIDO] * 4            # bicho que nao esta na lista
+           + [VAZIA] * 8)                  # a lista esvazia de verdade
 
 fita = []                                  # (quadro, o que aconteceu)
 quadro = {"i": 0}
@@ -140,8 +148,9 @@ main.run_bot()
 
 # ------------------------------------------------------------------ o veredito
 print("\nroteiro da battle list, quadro por quadro:")
-print("  0-2 vazia | 3-7 bicho na lista | 8-13 engajado | "
-      "14-17 leitura ruim | 18-21 engajado | 22+ vazia\n")
+print("  0-2 vazia | 3-7 na lista | 8-13 engajado | 14-17 leitura ruim |\n"
+      "  18-21 engajado | 22-25 sprite escurecido | 26-29 desconhecido |\n"
+      "  30+ vazia de verdade\n")
 for i, acao in fita:
     print(f"  quadro {i:>2}: {acao}")
 
@@ -158,7 +167,7 @@ if paradas and ataques and min(paradas) > min(ataques):
     falhas.append(f"atacou no quadro {min(ataques)} antes de parar "
                   f"no {min(paradas)}")
 # clique no mapa so vale nos quadros em que a lista esta vazia de verdade
-com_bicho = set(range(3, 22))
+com_bicho = set(range(3, 30))   # tudo isso e bicho vivo do lado do personagem
 no_meio_da_briga = [i for i in cliques if i in com_bicho]
 if no_meio_da_briga:
     falhas.append(f"clicou no mapa durante a briga, nos quadros "

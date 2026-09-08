@@ -86,15 +86,24 @@ O código está comentado com o *porquê* de cada uma delas.
 - **Só troca de alvo quando a entrada sumir da battle list.** 1 de vida é vivo.
   Guarda-se o sprite e *quantas* entradas iguais havia, porque sprite não
   distingue dois Bonelords — "eram 2, agora é 1" significa que um morreu.
+- **Sprite igual mesmo com outro brilho.** Com o bicho quase morto o cliente
+  **escurece** o sprite dele na lista. Comparando só por diferença média de
+  pixel, o sprite escuro deixava de casar — e aí o bot dava o bicho por morto,
+  trocava de alvo a um golpe de matá-lo e voltava a clicar no mapa. Além da
+  diferença média, agora vale a **correlação** (média descontada e escala
+  normalizada), que ignora brilho: medido, o mesmo sprite a 20% de brilho ainda
+  casa, e Bonelord escurecido continua não casando com Gazer.
 - **Parar de andar é por tecla, não por clique.** O clique era no próprio
   quadrado do personagem; com zoom out um pixel vale 2 SQM e o clique de "pare"
   cai longe, mandando ele *andar*.
-- **Nenhum clique no mapa enquanto há bicho.** No cliente, clique no mapa ou
-  tecla de direção durante o ataque troca o modo de luta de *chase* para
-  *stand*. Então o trajeto só volta depois de a battle list ficar limpa por
-  várias leituras seguidas — uma leitura ruim no meio da briga não pode virar
-  clique. E "sumiu da lista" só conta como morte depois de leituras seguidas
-  sem a entrada.
+- **Nenhum clique no mapa enquanto há QUALQUER entrada na battle list.** No
+  cliente, clique no mapa ou tecla de direção durante o ataque troca o modo de
+  luta de *chase* para *stand*. Não basta olhar as entradas "atacáveis": bicho
+  ainda não aprendido, ou com o sprite escurecido, também é bicho vivo do lado
+  do personagem. A exceção é a lista que já provou não responder ao ataque
+  (NPC, player) — essa nunca morre e travaria o cave. Ainda por cima, o trajeto
+  só volta depois de a lista ficar limpa por várias leituras seguidas: uma
+  leitura ruim no meio da briga não pode virar clique.
 - **O ataque sai depois da parada**, com um respiro: a tecla de parada do
   cliente solta o alvo, e mandada depois mataria o ataque recém-dado.
 - **Odometria tirada das próprias marcas**, não da correlação do minimapa: na

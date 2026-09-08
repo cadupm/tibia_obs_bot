@@ -146,6 +146,9 @@ BATTLE_BAR_MAX_H = 6        # a barra da entrada e fina (3px); mais grosso e bot
 BATTLE_FRAME_RED = 0.25     # fracao vermelha na moldura para "este e o alvo"
 MONSTERS_FILE = "monstros.json"   # sprites aprendidos da battle list
 MONSTER_DIFF_MAX = 12             # diferenca media maxima para considerar igual
+MONSTER_CORR_MIN = 0.90           # ... ou a mesma forma com outro brilho: o
+                                  # cliente escurece o sprite do bicho quase
+                                  # morto, e ele nao pode deixar de ser ele
 ONLY_KNOWN_MONSTERS = False       # True = so ataca sprite que esta na lista
 AUTO_LEARN = False                # aprende sozinho o sprite do bicho que engajar
 
@@ -2012,11 +2015,35 @@ def add_monster_name(nome, monstros=None):
 
 
 def sprite_igual(a, b):
-    """Compara dois sprites de entrada da battle list."""
+    """
+    Compara dois sprites de entrada da battle list.
+
+    Dois criterios, e basta um passar:
+
+      1. diferenca media por pixel pequena - o caso normal, mesmo bicho, mesma
+         luz;
+      2. mesmo DESENHO com outro brilho, medido por correlacao (a media de cada
+         um e descontada e a escala normalizada, entao escurecer o sprite todo
+         nao muda o resultado).
+
+    O segundo criterio existe por erro observado: com o bicho quase morto o
+    cliente ESCURECE o sprite dele na lista. Só com a diferenca media, o sprite
+    escuro deixava de casar - e ai o bot dava o bicho por morto, trocava de alvo
+    a um golpe de mata-lo, e voltava a clicar no mapa achando a lista sem bicho
+    atacavel.
+    """
     if a is None or b is None or a.shape != b.shape:
         return False
-    return float(np.abs(a.astype(np.int16)
-                        - b.astype(np.int16)).mean()) <= MONSTER_DIFF_MAX
+    x = a.astype(np.float32).ravel()
+    y = b.astype(np.float32).ravel()
+    if float(np.abs(x - y).mean()) <= MONSTER_DIFF_MAX:
+        return True
+    x = x - x.mean()
+    y = y - y.mean()
+    escala = float(np.sqrt((x * x).sum() * (y * y).sum()))
+    if escala < 1e-6:                      # sprite chapado: nada a correlacionar
+        return False
+    return float((x * y).sum() / escala) >= MONSTER_CORR_MIN
 
 
 def monstros_atacaveis(sprites, monstros, filtrar=None):
@@ -2847,7 +2874,14 @@ def run_bot():
             # o modo de luta de "chase" para "stand". Por isso o trajeto tambem
             # fica preso enquanto a trava acha que o bicho esta vivo - se a
             # entrada dele falhar numa leitura, o bot nao pode sair clicando.
-            lutando = atacaveis > 0 or bool(alvo) or not pode_trocar
+            # QUALQUER entrada na lista segura o clique, nao so a que conta
+            # como atacavel: bicho ainda nao aprendido, ou com o sprite
+            # escurecido por estar quase morto, tambem e bicho vivo do lado do
+            # personagem. A excecao e a lista que ja provou nao responder ao
+            # ataque (NPC, player): essa nao morre nunca e travaria o cave.
+            so_inuteis = lista_inutil == assinatura
+            lutando = ((entradas > 0 and not so_inuteis)
+                       or bool(alvo) or not pode_trocar)
             if USE_MAP_MARKS:
                 # acompanha as marcas SEMPRE, inclusive lutando: se o rastreio
                 # para durante a briga, ao voltar o bot nao sabe mais de onde

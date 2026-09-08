@@ -82,5 +82,14 @@ if pode[-1] is not True:
 soltou_em = next((i for i, v in enumerate(pode) if v), None)
 print(f"  soltou na leitura {soltou_em} (~{soltou_em * 0.2:.1f}s)")
 
+# 5) o bicho fica quase morto e o cliente ESCURECE o sprite dele na lista.
+# Continua sendo ele: escurecer nao e morrer.
+ESCURO = (A.astype(float) * 0.35).astype(np.uint8)
+pode = roda("sprite escurecido (bicho quase morto)",
+            [(True, A, [A])] + [(False, None, [ESCURO])] * 4)
+print("  o sprite escuro casa com o claro?", main.sprite_igual(ESCURO, A))
+if any(pode):
+    falhas.append(f"tratou sprite escurecido como morte: {pode}")
+
 print("\nVEREDITO:", "OK - so troca quando some da lista" if not falhas
       else "FALHOU: " + "; ".join(falhas))
