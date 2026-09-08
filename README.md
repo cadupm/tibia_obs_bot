@@ -61,7 +61,7 @@ que se escolhe aqui é o que **o bot** faz enquanto luta:
 | --- | --- |
 | `stand` | manda a tecla de parada ao engajar e não sai do lugar |
 | `chase` | **não** manda a tecla de parada — o `esc` cancelaria o follow do cliente junto com o ataque. Só para de clicar no mapa e deixa o cliente perseguir |
-| `kite` | anda de seta para manter `KITE_DIST` SQM de todo bicho na tela, inclusive do alvo |
+| `kite` | anda de seta para ficar **sempre** a `KITE_DIST` SQM do bicho mais perto: recua se ele chega, **persegue se ele corre** |
 
 No kite, o bot acha as criaturas pela **moldura da barrinha de vida** que o
 cliente desenha sobre cada uma. Medida na captura de dentro da cave, ela é
@@ -81,6 +81,40 @@ barras de verdade. A moldura **não encurta** com o dano — só o preenchimento
 então a detecção funciona igual com o bicho quase morto, que é justamente quem
 está perto. A barra de vida **e a de mana** do próprio personagem caem no
 quadrado do meio do viewport e são descartadas.
+
+A distância tem **dois lados**. Perto demais é perigo; longe demais é perder o
+bicho. A nota de cada posição é, em ordem: está na distância ou mais → o quanto
+desvia da distância → a soma das distâncias **em linha reta**. Esse terceiro
+nível não é detalhe: o Tibia mede distância pelo maior eixo, e por essa conta
+sair de (1,0) para (1,1) não melhora nada — continua colado. Em linha reta
+melhora, e é esse passo que no seguinte abre de verdade. Sem ele o bot ficava
+plantado quando o único lado que aumentava a distância estava bloqueado por
+escada. O desempate vale só quando está perto demais: na distância certa ele
+fica parado, senão andaria em círculo por centésimos de diagonal.
+
+### Escada, buraco, portal
+
+Cair de andar fugindo de bicho é queda sem volta automática, e o lugar onde se
+cai pode estar cheio. Duas camadas:
+
+**Prevenção** — você ensina os quadrados em que não se pisa:
+
+```
+python main.py --evitar
+```
+
+Clique em cada escada, buraco ou portal na tela do jogo (clique no **projetor**,
+que não mexe no personagem). Cada quadrado é recortado, reduzido a uma
+assinatura de um pixel a cada 4 e guardado em `evitar.json`; no kite, o bot
+deixa de andar para qualquer lado cujo quadrado de destino se pareça com um
+deles. Não sobrando lado nenhum, ele fica parado — melhor que cair.
+
+**Alarme** — se mesmo assim mudar de andar, o bot **para**. Andando pelo mesmo
+andar o minimapa apenas rola, e o que sobra de diferença depois de alinhar é
+pouco; trocar de andar troca o mapa todo e esse resto dispara. A comparação é
+com a **mediana dos restos recentes**, não com um número fixo: cada cave tem sua
+textura, e o que interessa é a mudança brusca. Desligável em
+`PARAR_SE_MUDAR_ANDAR`.
 
 As **diagonais** (teclado numérico) vêm desligadas: no cliente testado elas não
 movem o personagem — de um log inteiro de kite, o único passo que andou foi um
@@ -182,6 +216,7 @@ gui.py          o painel
 opacity.py      opacidade da janela do jogo
 config.json     o que o painel salva
 monstros.json   sprites de battle list aprendidos
+evitar.json     quadrados de nao pisar: escada, buraco, portal
 rotas/          rotas gravadas (em SQM, sobrevivem à troca de zoom)
 testes/         simulações do comportamento de rota e da leitura de tela
 ```
@@ -190,7 +225,8 @@ Modos de linha de comando úteis: `--bars` (só lê vida/mana), `--battle`
 (diagnóstico da battle list), `--calib` (coordenada e cor sob o mouse),
 `--zoom` (mede px por SQM no zoom em uso), `--marcas` (grava a ordem da rota),
 `--kite` (criaturas na tela em SQM, com a grade desenhada num PNG), `--teclas`
-(mede quais teclas de movimento andam no cliente).
+(mede quais teclas de movimento andam no cliente), `--evitar` (ensina por clique
+os quadrados de não pisar).
 
 ## Testes
 
@@ -205,6 +241,7 @@ python testes/testa_rota_ordem.py      # rota gravada: segue a ordem, começando
 python testes/testa_trava_alvo.py      # não troca de alvo até o bicho sumir da lista
 python testes/testa_ordem_parada.py   # para antes de atacar; não clica no mapa lutando
 python testes/testa_kite.py           # acha as criaturas na tela e sabe para onde fugir
+python testes/testa_kite_distancia.py # recua, persegue, e não pisa na escada
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
 ```
 

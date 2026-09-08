@@ -20,6 +20,7 @@
   "TARGET_GONE_READS": 3,
   "KITE_DIST": 3,
   "KITE_COOLDOWN": 0.35,
+  "KITE_DIAGONAIS": true,
   "ENABLE_SPELL": true,
   "SPELL_HOTKEY": "f1",
   "SPELL_COOLDOWN": 2.0,
@@ -66,5 +67,5 @@
       "intervalo": 300.0
     }
   ],
-  "KITE_DIAGONAIS": false
+  "PARAR_SE_MUDAR_ANDAR": true
 }

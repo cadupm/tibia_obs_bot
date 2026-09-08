@@ -79,6 +79,8 @@ ABAS = [
              "segundos; a velocidade de andar do personagem"),
             ("KITE_DIAGONAIS", "Usar diagonais", bool,
              "teclado numerico; confira com --teclas"),
+            ("PARAR_SE_MUDAR_ANDAR", "Parar se mudar de andar", bool,
+             "caiu em escada ou buraco: para tudo"),
         ]),
         ("Combo de magia", "ENABLE_SPELL", [
             ("SPELL_HOTKEY", "Magia do combo", str, "entra entre os turnos"),

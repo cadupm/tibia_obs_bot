@@ -229,6 +229,18 @@ KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
 KITE_PASSOS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0),
                "num7": (-1, -1), "num9": (1, -1),
                "num1": (-1, 1), "num3": (1, 1)}
+# Quadrados em que NAO se pisa: escada, buraco, portal. Sao ensinados por
+# clique ("python main.py --evitar") e guardados em evitar.json. A comparacao e
+# por assinatura reduzida (um pixel a cada 4), que aguenta a animacao do chao.
+EVITAR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "evitar.json")
+EVITAR_PASSO = 4                # de quantos em quantos pixels a assinatura pega
+EVITAR_DIFF_MAX = 22            # diferenca media maxima para ser o mesmo chao
+PARAR_SE_MUDAR_ANDAR = True     # mudou de andar durante o kite? para o bot.
+                                # Cair num buraco fugindo de bicho e queda sem
+                                # volta automatica, e o lugar onde se cai pode
+                                # estar cheio - dai em diante quem decide e a
+                                # pessoa, nao o bot.
 KITE_DIAGONAIS = False          # As diagonais do teclado numerico NAO moveram o
                                 # personagem no teste em jogo: de um log inteiro
                                 # de kite, o unico passo que andou foi um
@@ -330,6 +342,10 @@ RECORD_CLICK_TIMEOUT = 3.0      # s esperando o personagem sair do lugar
 WALK_RECORD_STEP = 24           # px ANDADOS (comprimento do caminho) por waypoint
 WALK_RECORD_MIN_DIST = 6        # nao fecha waypoint colado no anterior
 WALK_CLICK_COOLDOWN = 1.5       # s entre cliques rumo ao mesmo waypoint
+ODO_HISTORICO = 12              # leituras guardadas para saber o que e
+                                # normal de diferenca neste andar
+ODO_SALTO = 4.0                 # quantas vezes a mediana o resto tem de
+                                # passar para ser mudanca de andar
 ODO_RADIUS = 8                  # px de busca por leitura (4 SQM: sobra folga)
 WALK_JITTER = [(0, 0), (2, 2), (-2, -2), (2, -2)]   # desvios ao reclicar
 
@@ -1124,17 +1140,38 @@ class Odometro:
         self.win = win
         self.frame = minimap_grab(win)
         self.pos = [0, 0]
+        self.restos = []               # o que sobrou de diferenca em cada leitura
         self.parado = 0
 
     def atualiza(self):
         """Le o minimapa e integra o deslocamento. Devolve o passo lido."""
         agora = minimap_grab(self.win)
-        (dx, dy), _ = minimap_shift(self.frame, agora, raio=ODO_RADIUS)
+        (dx, dy), resto = minimap_shift(self.frame, agora, raio=ODO_RADIUS)
         self.frame = agora
         self.pos[0] += dx
         self.pos[1] += dy
         self.parado = self.parado + 1 if (dx, dy) == (0, 0) else 0
+        self.restos.append(resto)
+        del self.restos[:-ODO_HISTORICO]
         return dx, dy
+
+    def mudou_de_andar(self):
+        """
+        O minimapa trocou por inteiro? Entao o personagem mudou de andar.
+
+        Andando pelo mesmo andar, o minimapa apenas ROLA: alinhado, o que sobra
+        de diferenca e pouco. Descer uma escada ou cair num buraco troca o mapa
+        todo, e nao ha alinhamento que feche - o resto dispara.
+
+        A comparacao e com a MEDIANA dos restos recentes, nao com um numero
+        fixo: cada cave tem sua textura, e o que interessa e a mudanca brusca
+        em relacao ao que vinha acontecendo.
+        """
+        if len(self.restos) < ODO_HISTORICO:
+            return False
+        antigos = sorted(self.restos[:-1])
+        mediana = antigos[len(antigos) // 2]
+        return self.restos[-1] > max(mediana * ODO_SALTO, 8.0)
 
     def resync(self):
         """
@@ -2002,6 +2039,74 @@ def load_icones(caminho=None):
             for ico in dados.get("icones", [])]
 
 
+def assinatura_tile(tile):
+    """Reduz o quadrado a uma assinatura comparavel (um pixel a cada 4)."""
+    return np.ascontiguousarray(tile[::EVITAR_PASSO, ::EVITAR_PASSO])
+
+
+def tile_da_tela(img, col, lin):
+    """O quadrado (col, lin) da grade do viewport, ou None se cair fora."""
+    alt, larg = img.shape[:2]
+    x0, y0 = col * TILE_PX, lin * TILE_PX
+    if x0 < 0 or y0 < 0 or x0 + TILE_PX > larg or y0 + TILE_PX > alt:
+        return None
+    return img[y0:y0 + TILE_PX, x0:x0 + TILE_PX]
+
+
+def load_evitar(caminho=None):
+    """Quadrados a evitar: {nome: assinatura}."""
+    caminho = caminho or EVITAR_FILE
+    if not os.path.exists(caminho):
+        return {}
+    with open(caminho, encoding="utf-8") as f:
+        cru = json.load(f)
+    return {nome: np.array(px, dtype=np.uint8) for nome, px in cru.items()}
+
+
+def save_evitar(lugares, caminho=None):
+    """Grava os quadrados a evitar."""
+    caminho = caminho or EVITAR_FILE
+    with open(caminho, "w", encoding="utf-8") as f:
+        json.dump({nome: np.asarray(px).tolist()
+                   for nome, px in lugares.items()}, f)
+    print(f"[evitar] {len(lugares)} lugar(es) salvo(s) em {caminho}")
+
+
+def tile_proibido(tile, lugares):
+    """Nome do lugar a evitar que este quadrado parece ser, ou None."""
+    if tile is None or not lugares:
+        return None
+    assinatura = assinatura_tile(tile).astype(np.int16)
+    for nome, modelo in lugares.items():
+        if modelo.shape != assinatura.shape:
+            continue
+        if float(np.abs(assinatura - modelo.astype(np.int16)).mean()) \
+                <= EVITAR_DIFF_MAX:
+            return nome
+    return None
+
+
+def passos_proibidos(img, lugares):
+    """
+    Quais passos caem em quadrado de nao pisar.
+
+    Olha o quadrado de destino de cada lado e compara com o que foi ensinado.
+    Sem isso o kite anda para tras e cai na escada ou no buraco atras dele - e
+    de andar em andar nao ha volta automatica.
+    """
+    if not lugares:
+        return set()
+    _vx, _vy, vw, vh = GAME_VIEW
+    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+    proibidos = set()
+    for (px, py) in set(KITE_PASSOS.values()):
+        tile = tile_da_tela(img, meio_col + px, meio_lin + py)
+        nome = tile_proibido(tile, lugares)
+        if nome:
+            proibidos.add((px, py))
+    return proibidos
+
+
 def load_monsters(caminho=None):
     """
     Le a lista de monstros: {nome: sprite ou None}.
@@ -2496,34 +2601,54 @@ def longe_o_bastante(criaturas, distancia=None):
     return min(max(abs(dx), abs(dy)) for dx, dy in criaturas)
 
 
-def passo_de_fuga(criaturas, distancia=None):
+def passo_de_kite(criaturas, distancia=None, proibidos=()):
     """
-    Para que lado andar para ficar longe de todos, ou None se ja esta bom.
+    Para que lado andar para ficar EXATAMENTE a `distancia` do bicho mais perto,
+    ou None se ja esta bom (ou se andar so piora).
 
-    Escolhe entre os quatro lados aquele que deixa o bicho mais perto o mais
-    longe possivel. Sem melhora nenhuma, devolve None - encurralado, andar so
-    piora.
+    A distancia tem dois lados, nao um: perto demais e perigo, longe demais e
+    perder o bicho - se ele corre, tem de correr atras. A nota de cada posicao e
+    (esta na distancia ou mais, o quanto desvia da distancia): assim, estando
+    perto demais vale o lado que mais afasta, e estando longe vale o lado que
+    mais aproxima, sem nunca escolher um lado que deixe algum bicho perto demais.
+
+    `proibidos` sao passos que nao se pode dar - escada, buraco, portal. Andar
+    para um deles nao troca de posicao: troca de andar.
     """
     distancia = KITE_DIST if distancia is None else distancia
-    perto = longe_o_bastante(criaturas, distancia)
-    if perto is None or perto >= distancia:
+    if not criaturas:
         return None
 
     def nota_de(lista):
-        """Quao boa e uma posicao: primeiro o bicho mais perto, depois a soma.
-
-        A soma serve de desempate: entre dois lados que deixam o mais perto na
-        mesma distancia, vale o que abre mais espaco no conjunto.
         """
-        return (longe_o_bastante(lista, distancia),
-                sum(max(abs(dx), abs(dy)) for dx, dy in lista))
+        Quao boa e uma posicao, em tres niveis:
+
+          1. esta na distancia pedida ou mais (seguranca vem primeiro);
+          2. o quanto desvia da distancia pedida - perto demais e perigo, longe
+             demais e perder o bicho;
+          3. a soma das distancias EM LINHA RETA, como desempate fino.
+
+        O terceiro nivel nao e detalhe: o Tibia mede distancia pelo maior eixo,
+        e por essa conta sair de (1,0) para (1,1) nao melhora nada - continua
+        colado. Em linha reta melhora (1.0 para 1.41), e e esse passo que, no
+        seguinte, abre de verdade. Sem ele o bot ficava plantado quando o unico
+        lado que aumentava a distancia estava bloqueado por escada.
+        """
+        perto = longe_o_bastante(lista, distancia)
+        seguro = 1 if perto >= distancia else 0
+        # o desempate em linha reta vale so quando esta PERTO DEMAIS: ai qualquer
+        # ganho de espaco serve. Estando na distancia certa ele nao vale, senao
+        # o bot fica andando em circulo para ganhar centesimos de diagonal.
+        reta = (0.0 if seguro else
+                sum((dx * dx + dy * dy) ** 0.5 for dx, dy in lista))
+        return (seguro, -abs(perto - distancia), reta)
 
     passos = KITE_PASSOS if KITE_DIAGONAIS else {
         t: p for t, p in KITE_PASSOS.items() if 0 in p}
     melhor, melhor_nota = None, nota_de(criaturas)
     for tecla, (px, py) in passos.items():
-        if (px, py) in criaturas:
-            continue                     # o quadrado ja tem bicho: nao se anda
+        if (px, py) in criaturas or (px, py) in proibidos:
+            continue                     # quadrado ocupado, ou lugar de nao pisar
         depois = [(dx - px, dy - py) for dx, dy in criaturas]
         nota = nota_de(depois)
         if nota > melhor_nota:
@@ -2531,7 +2656,7 @@ def passo_de_fuga(criaturas, distancia=None):
     return melhor
 
 
-def kite(leitura, teclado, kite_cd):
+def kite(leitura, teclado, kite_cd, lugares=None):
     """
     Anda para longe dos bichos, mantendo KITE_DIST de todos - inclusive do alvo.
 
@@ -2541,21 +2666,111 @@ def kite(leitura, teclado, kite_cd):
     """
     if not kite_cd.ready():
         return False
-    criaturas = detect_creatures(leitura)
-    tecla = passo_de_fuga(criaturas)
+    vx, vy, vw, vh = GAME_VIEW
+    cx, cy, _, _ = client_rect(leitura)
+    img = grab((cx + vx, cy + vy, vw, vh))
+    criaturas = detect_creatures(leitura, img=img)
+    proibidos = passos_proibidos(img, lugares or {})
+    tecla = passo_de_kite(criaturas, proibidos=proibidos)
     perto = longe_o_bastante(criaturas)
     if tecla is None:
         if perto is not None and perto < KITE_DIST:
             print(f"[kite] encurralado: o bicho mais perto esta a {perto} SQM "
-                  f"e nenhum lado melhora")
+                  f"e nenhum lado melhora"
+                  + (f" ({len(proibidos)} lado(s) sao de nao pisar)"
+                     if proibidos else ""))
         return False
     if not teclado.isActive:
         focus_window(teclado)
     pyautogui.press(tecla)
     kite_cd.mark()
     print(f"[kite] {len(criaturas)} bicho(s) na tela, o mais perto a {perto} "
-          f"SQM: ando para {tecla}")
+          f"SQM: ando para {tecla}"
+          + (f" (evitando {len(proibidos)} lado(s))" if proibidos else ""))
     return True
+
+
+def clique_na_tela_do_jogo(leitura):
+    """
+    O quadrado do viewport em que VOCE clicou, ou None.
+
+    Mesmo mecanismo do clique no minimapa: o bit de "apertado desde a ultima
+    chamada" do GetAsyncKeyState, que nao perde clique curto. Devolve
+    (coluna, linha) na grade e o offset (dx, dy) em SQM a partir do personagem.
+    """
+    if not (user32.GetAsyncKeyState(VK_LBUTTON) & 0x0001):
+        return None
+    ponto = wt.POINT()
+    user32.GetCursorPos(ctypes.byref(ponto))
+    cx, cy, _, _ = client_rect(leitura)
+    vx, vy, vw, vh = GAME_VIEW
+    x = ponto.x - (cx + vx)
+    y = ponto.y - (cy + vy)
+    if not (0 <= x < vw and 0 <= y < vh):
+        return None
+    col, lin = int(x // TILE_PX), int(y // TILE_PX)
+    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+    return (col, lin), (col - meio_col, lin - meio_lin)
+
+
+def record_evitar(segundos=120.0):
+    """
+    Ensina os quadrados de NAO PISAR: escada, buraco, portal, teleporte.
+
+    Clique em cada um deles na tela do jogo. O quadrado e recortado e guardado
+    em evitar.json; no modo kite, o bot deixa de andar para qualquer lado cujo
+    quadrado de destino se pareca com um desses - e assim ele nao cai de andar
+    fugindo de bicho, que e queda sem volta automatica.
+
+    Clique no PROJETOR para nao mexer no personagem: o clique na tela do jogo
+    anda ou usa item. Ctrl+Alt+S para salvar e sair.
+    """
+    leitura, teclado = setup_windows()
+    if not leitura:
+        return
+    if leitura is not teclado:
+        focus_window(leitura)          # clicar aqui nao mexe no personagem
+    lugares = load_evitar()
+    print(f"{len(lugares)} lugar(es) ja ensinado(s): "
+          f"{', '.join(lugares) or 'nenhum'}")
+    print("CLIQUE em cada quadrado de nao pisar (escada, buraco, portal).")
+    print("Clique no PROJETOR: na janela do jogo o clique anda ou usa item.")
+    print("Ctrl+Alt+S para salvar e sair." + chr(10))
+
+    vx, vy, vw, vh = GAME_VIEW
+    fim = time.time() + segundos
+    novos = 0
+    while time.time() < fim and not keyboard.is_pressed(KILL_KEY):
+        time.sleep(0.1)
+        onde = clique_na_tela_do_jogo(leitura)
+        if not onde:
+            continue
+        (col, lin), offset = onde
+        cx, cy, _, _ = client_rect(leitura)
+        img = grab((cx + vx, cy + vy, vw, vh))
+        tile = tile_da_tela(img, col, lin)
+        if tile is None:
+            continue
+        ja = tile_proibido(tile, lugares)
+        if ja:
+            print(f"[evitar] esse quadrado ja e '{ja}'")
+            continue
+        nome = f"lugar{len(lugares) + 1}"
+        lugares[nome] = assinatura_tile(tile)
+        novos += 1
+        arquivo = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               f"evitar_{nome}.png")
+        grande = np.repeat(np.repeat(tile, 3, axis=0), 3, axis=1)
+        mss.tools.to_png(np.ascontiguousarray(grande).tobytes(),
+                         (grande.shape[1], grande.shape[0]), output=arquivo)
+        print(f"[evitar] '{nome}' guardado do quadrado {offset} "
+              f"(recorte em {os.path.basename(arquivo)})")
+
+    if novos:
+        save_evitar(lugares)
+    else:
+        print("[evitar] nada novo ensinado.")
+    restore_windows()
 
 
 def show_teclas():
@@ -2635,7 +2850,7 @@ def show_kite(segundos=20.0):
         img = grab((cx + vx, cy + vy, vw, vh))
         criaturas = detect_creatures(leitura, img=img)
         perto = longe_o_bastante(criaturas)
-        passo = passo_de_fuga(criaturas)
+        passo = passo_de_kite(criaturas)
         print(f"  {len(criaturas)} criatura(s) {criaturas} | mais perto: "
               f"{perto} SQM | passo: {passo or '-'}          ",
               end=chr(13), flush=True)
@@ -3006,6 +3221,12 @@ def run_bot():
     spell_cd = Cooldown(SPELL_COOLDOWN, 0.15)
     sem_alvo = 0
     monstros = load_monsters()
+    evitar_lugares = load_evitar() if ATTACK_MODE == "kite" else {}
+    odo_kite = None                    # odometro proprio do kite: ele roda com
+                                       # a rota desligada, onde nao ha odo
+    if ATTACK_MODE == "kite":
+        print(f"[kite] {len(evitar_lugares)} lugar(es) de nao pisar: "
+              f"{', '.join(evitar_lugares) or 'nenhum ainda, ensine com --evitar'}")
     if ONLY_KNOWN_MONSTERS:
         print(f"[monstros] atacando so os {len(monstros)} sprites da lista: "
               f"{', '.join(monstros) or 'nenhum'}")
@@ -3185,7 +3406,15 @@ def run_bot():
         # andar desligado. Ficava dentro do bloco da rota e nao acontecia nada
         # para quem so quer o bot lutando.
         if lutando and ATTACK_MODE == "kite":
-            kite(leitura, teclado, kite_cd)
+            if odo_kite is None:
+                odo_kite = Odometro(leitura)
+            odo_kite.atualiza()
+            if PARAR_SE_MUDAR_ANDAR and odo_kite.mudou_de_andar():
+                print("[kite] O MINIMAPA TROCOU POR INTEIRO: mudei de andar "
+                      "(escada, buraco ou portal). Parando o bot - dai em "
+                      "diante quem decide e voce.")
+                break
+            kite(leitura, teclado, kite_cd, evitar_lugares)
 
         # 5) segue o cave. A posicao e integrada SEMPRE, inclusive durante a
         # briga: e isso que faz o reclique depois da luta cair no lugar certo.
@@ -3244,6 +3473,8 @@ if __name__ == "__main__":
                         help="Diagnostico do kite: criaturas na tela em SQM.")
     parser.add_argument("--teclas", action="store_true",
                         help="Mede quais teclas de movimento andam no cliente.")
+    parser.add_argument("--evitar", action="store_true",
+                        help="Ensina por clique os quadrados de nao pisar.")
     parser.add_argument("--obs", action="store_true",
                         help="Ler do projetor do OBS em vez da janela do Tibia.")
     args = parser.parse_args()
@@ -3259,6 +3490,8 @@ if __name__ == "__main__":
             show_kite()
         elif args.teclas:
             show_teclas()
+        elif args.evitar:
+            record_evitar()
         elif args.record:
             record_waypoints()
         elif args.marcas:

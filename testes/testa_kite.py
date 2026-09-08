@@ -43,36 +43,52 @@ if os.path.exists(AMOSTRA):          # ja exercita o leitor do png.py
     print("captura da cave (Skeleton colado a esquerda, Bonelord no canto):")
     print("  criaturas:", achadas)
     print("  mais perto:", main.longe_o_bastante(achadas), "SQM")
-    print("  passo de fuga:", main.passo_de_fuga(achadas))
+    print("  passo de fuga:", main.passo_de_kite(achadas))
     if sorted(achadas) != sorted(ESPERADAS):
         falhas.append(f"deteccao na captura: esperava {ESPERADAS}, "
                       f"saiu {achadas}")
-    if main.passo_de_fuga(achadas) != "right":
-        falhas.append("fuga na captura: devia ser para a direita")
+    passo = main.passo_de_kite(achadas)
+    px, py = main.KITE_PASSOS[passo] if passo else (0, 0)
+    depois = main.longe_o_bastante([(dx - px, dy - py) for dx, dy in achadas])
+    if depois <= main.longe_o_bastante(achadas):
+        falhas.append(f"fuga na captura: {passo} nao afasta "
+                      f"({main.longe_o_bastante(achadas)} -> {depois})")
 else:
     print(f"(sem {os.path.basename(AMOSTRA)}: a parte de deteccao nao roda)")
 
 # --------------------------------------------------------------- 2) decisao
 print("\ndecisao de fuga, tabuleiros montados a mao "
       f"(mantendo {main.KITE_DIST} SQM):")
+# Aqui se confere o EFEITO, nao a tecla: com as diagonais ligadas ha mais de uma
+# resposta certa, e qual delas nao vem ao caso. A decisao detalhada, com o
+# projeto no padrao (so setas), esta no testa_kite_distancia.py.
 CASOS = [
-    ("bicho colado a esquerda", [(-1, 0)], "right"),
-    ("bicho colado a direita", [(1, 0)], "left"),
-    ("bicho em cima", [(0, -1)], "down"),
-    ("bicho embaixo", [(0, 1)], "up"),
-    ("dois, esquerda e cima", [(-1, 0), (0, -1)], None),   # direita ou baixo
-    ("ja esta a 3 SQM", [(3, 0)], None),                   # nao anda
-    ("ja esta longe", [(5, -4)], None),
-    ("cercado dos quatro lados", [(-1, 0), (1, 0), (0, -1), (0, 1)], None),
-    ("nada na tela", [], None),
+    ("bicho colado a esquerda", [(-1, 0)], "afasta"),
+    ("bicho colado a direita", [(1, 0)], "afasta"),
+    ("bicho em cima", [(0, -1)], "afasta"),
+    ("bicho embaixo", [(0, 1)], "afasta"),
+    ("dois, esquerda e cima", [(-1, 0), (0, -1)], "afasta"),
+    (f"ja esta a {main.KITE_DIST} SQM", [(main.KITE_DIST, 0)], "fica"),
+    ("longe demais", [(8, 0)], "aproxima"),
+    ("nada na tela", [], "fica"),
 ]
-for nome, criaturas, esperado in CASOS:
-    passo = main.passo_de_fuga(criaturas)
+for nome, criaturas, querido in CASOS:
+    passo = main.passo_de_kite(criaturas)
     perto = main.longe_o_bastante(criaturas)
-    print(f"  {nome:28} bichos={str(criaturas):32} "
-          f"perto={perto} -> {passo}")
-    if esperado is not None and passo != esperado:
-        falhas.append(f"{nome}: esperava {esperado}, saiu {passo}")
+    if passo is None:
+        saiu = "fica"
+    else:
+        px, py = main.KITE_PASSOS[passo]
+        depois = main.longe_o_bastante([(dx - px, dy - py)
+                                        for dx, dy in criaturas])
+        saiu = ("afasta" if depois > perto else
+                "aproxima" if depois < perto else "de lado")
+    print(f"  {nome:28} bichos={str(criaturas):26} "
+          f"perto={perto} -> {passo} ({saiu})")
+    if querido == "afasta" and saiu not in ("afasta", "de lado"):
+        falhas.append(f"{nome}: em vez de afastar, {saiu}")
+    if querido in ("fica", "aproxima") and saiu != querido:
+        falhas.append(f"{nome}: esperava {querido}, saiu {saiu}")
 
 # Os casos sem resposta unica sao conferidos pelo EFEITO, nao pela tecla: o que
 # importa e a posicao ficar melhor, e qual diagonal serve nao vem ao caso.
@@ -82,20 +98,20 @@ def depois_de(criaturas, tecla):
 
 
 dois = [(-1, 0), (0, -1)]                        # esquerda e em cima
-passo = main.passo_de_fuga(dois)
+passo = main.passo_de_kite(dois)
 if passo is None or main.longe_o_bastante(depois_de(dois, passo)) <= 1:
     falhas.append(f"dois bichos: {passo} nao aumenta a distancia do mais perto")
 else:
     print(f"\n  dois bichos: {passo} leva o mais perto de 1 para "
           f"{main.longe_o_bastante(depois_de(dois, passo))} SQM")
 
-if main.passo_de_fuga([(3, 0)]) is not None:
+if main.passo_de_kite([(3, 0)]) is not None:
     falhas.append("andou estando ja na distancia pedida")
 
 # cercado nos quatro lados retos: nao da para aumentar a distancia, mas a
 # diagonal deixa dois vizinhos em vez de quatro - isso e melhor que ficar
 cercado = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-passo = main.passo_de_fuga(cercado)
+passo = main.passo_de_kite(cercado)
 if passo is not None:
     antes = sum(1 for c in cercado if max(abs(c[0]), abs(c[1])) <= 1)
     agora = sum(1 for c in depois_de(cercado, passo)
@@ -111,20 +127,19 @@ if passo is not None:
 print("\nafastando-se em serie (bicho parado, personagem fugindo):")
 criaturas, andou = [(-1, 0)], []
 for _ in range(5):
-    passo = main.passo_de_fuga(criaturas)
+    passo = main.passo_de_kite(criaturas)
     if passo is None:
         break
     andou.append(passo)
-    px, py = {"up": (0, -1), "down": (0, 1),
-              "left": (-1, 0), "right": (1, 0)}[passo]
+    px, py = main.KITE_PASSOS[passo]        # inclui as diagonais
     criaturas = [(dx - px, dy - py) for dx, dy in criaturas]
 print("  passos:", andou, "-> bicho agora em", criaturas,
       f"({main.longe_o_bastante(criaturas)} SQM)")
 if main.longe_o_bastante(criaturas) < main.KITE_DIST:
     falhas.append("nao chegou na distancia pedida fugindo em linha")
-if len(andou) != main.KITE_DIST - 1:
+if len(andou) > main.KITE_DIST:
     falhas.append(f"gastou {len(andou)} passos para abrir "
-                  f"{main.KITE_DIST} SQM (esperava {main.KITE_DIST - 1})")
+                  f"{main.KITE_DIST} SQM, mais que o necessario")
 
 print("\nVEREDITO:", "OK - mantem a distancia e sabe quando nao ha para onde ir"
       if not falhas else "FALHOU: " + "; ".join(falhas))
