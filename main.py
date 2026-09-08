@@ -246,8 +246,25 @@ PARALISIA_COOLDOWN = 2.0        # s entre tentativas de curar
 
 ENABLE_LOOT = True
 LOOT_HOTKEY = "-"               # a tecla de saque rapido, no cliente
+LOOT_HOTKEY_NUMPAD = True       # mandar TAMBEM o menos do teclado numerico.
+                                # Sao teclas DIFERENTES: o '-' da fileira de
+                                # cima e VK_OEM_MINUS e o do numpad e
+                                # VK_SUBTRACT. Com a hotkey do cliente no
+                                # numpad, apertar '-' nao chegava la e o bot
+                                # nao pegava nada - sem nenhum sinal no log,
+                                # porque do lado do bot a tecla "saiu" certo.
+                                # Tecla que o cliente nao usa nao faz nada,
+                                # entao mandar as duas nao custa.
 LOOT_DIST = 1                   # SQM: daqui o saque alcanca o corpo
-LOOT_TENTATIVAS = 3             # apertadas por corpo (saque leva um por vez)
+LOOT_TENTATIVAS = 3             # apertadas por QUADRADO (saque leva um por vez)
+LOOT_VARRE = True               # varrer os quadrados em volta, e nao so o
+                                # estimado: a posicao do corpo vem de odometria
+                                # e erra por 1 SQM com facilidade. Errou o
+                                # quadrado, nao pega nada. Apertar a tecla sobre
+                                # chao vazio nao tem custo, entao vale varrer.
+LOOT_VARRE_RAIO = 1             # SQM em volta do estimado (1 = os 9 quadrados)
+LOOT_POR_VEZ = 3                # quadrados varridos por leitura: a varredura
+                                # inteira numa leitura so seguraria a cura
 LOOT_COOLDOWN = 0.45            # s entre apertadas
 LOOT_MIRA_PAUSA = 0.08          # s entre mirar o cursor e apertar a tecla
 LOOT_PRAZO = 8.0                # s tentando chegar no corpo antes de desistir:
@@ -1292,6 +1309,49 @@ class Odometro:
 
     def falta(self, alvo):
         return alvo[0] - self.pos[0], alvo[1] - self.pos[1]
+
+
+NUMPAD_DO_SINAL = {"-": "subtract", "+": "add", "*": "multiply",
+                   "/": "divide"}
+
+
+def aperta_saque():
+    """
+    Manda a tecla de saque - e, se for um sinal, a versao do teclado numerico.
+
+    O '-' da fileira de cima (VK_OEM_MINUS) e o '-' do numpad (VK_SUBTRACT) sao
+    teclas diferentes para o Windows e para o cliente. Com a hotkey configurada
+    no numpad, o bot apertava a outra e nao pegava nada, sem nada no log que
+    denunciasse: do lado dele a tecla tinha sido apertada com sucesso.
+
+    Tecla que o cliente nao usa nao faz nada, entao mandar as duas e mais barato
+    do que descobrir qual e.
+    """
+    pyautogui.press(LOOT_HOTKEY)
+    gemea = NUMPAD_DO_SINAL.get(LOOT_HOTKEY)
+    if LOOT_HOTKEY_NUMPAD and gemea:
+        pyautogui.press(gemea)
+
+
+def quadrados_do_saque(onde):
+    """
+    Os quadrados a tentar, do estimado para fora.
+
+    O offset do corpo vem de odometria e de uma barra de vida lida uma leitura
+    antes da morte: errar por 1 SQM e comum, e saque no quadrado vizinho ao
+    corpo nao pega nada. Varrer o anel em volta custa uma apertada de tecla por
+    quadrado vazio - nada - e transforma "errou por 1" em "pegou".
+    """
+    centro = (int(round(onde[0])), int(round(onde[1])))
+    if not LOOT_VARRE:
+        return [centro]
+    r = LOOT_VARRE_RAIO
+    volta = [(centro[0] + dx, centro[1] + dy)
+             for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
+    # o estimado primeiro, e depois os vizinhos do mais perto para o mais longe
+    volta.sort(key=lambda q: (abs(q[0] - centro[0]) + abs(q[1] - centro[1]),
+                              abs(q[0]), abs(q[1])))
+    return volta
 
 
 def mira_mouse(x, y):
@@ -3143,6 +3203,56 @@ def aprende_o_que_derrubou(estado, lugares):
     return nome
 
 
+def show_loot():
+    """
+    Confere o saque AGORA, com um corpo do lado, em vez de cacar uma hora.
+
+    Sao tres coisas que podem estar erradas e o log do bot nao separa:
+
+      1. A TECLA. O '-' da fileira de cima (VK_OEM_MINUS) e o '-' do numpad
+         (VK_SUBTRACT) sao teclas diferentes. Com a hotkey do cliente numa e o
+         bot apertando a outra, nao acontece nada - e do lado do bot a tecla
+         "saiu" com sucesso, entao o log nao acusa.
+      2. A MIRA. O saque rapido age sobre o que esta debaixo do cursor, e o
+         cursor precisa cair dentro do quadrado certo da tela do jogo.
+      3. A GEOMETRIA. Se GAME_VIEW ou TILE_PX estiverem errados para o seu
+         cliente, o cursor cai entre quadrados.
+
+    Como usar: mate um bicho, fique COLADO no corpo e rode. Ele varre os 9
+    quadrados em volta, um por vez, dizendo em qual esta mirando. O quadrado
+    que abrir a bolsa e o certo - e se nenhum abrir com uma tecla mas abrir com
+    a outra, a hotkey esta na tecla que voce nao configurou no bot.
+    """
+    leitura, teclado = setup_windows()
+    if not leitura:
+        return
+    gemea = NUMPAD_DO_SINAL.get(LOOT_HOTKEY)
+    print(f"Varrendo os 9 quadrados em volta do personagem com "
+          f"{LOOT_HOTKEY!r}"
+          + (f", e depois com {gemea!r} (o menos do numpad)" if gemea else "")
+          + ".")
+    print("Fique COLADO no corpo. Ctrl+C para sair." + chr(10))
+    teclas = [LOOT_HOTKEY] + ([gemea] if gemea else [])
+    for tecla in teclas:
+        print(f"--- tecla {tecla!r}")
+        for quadrado in quadrados_do_saque((0, 0)):
+            x, y = ponto_do_quadrado(leitura, quadrado)
+            if not teclado.isActive:
+                focus_window(teclado)
+            mira_mouse(x, y)
+            time.sleep(0.25)
+            pyautogui.press(tecla)
+            print(f"  quadrado {str(quadrado):>9} -> cursor em ({x}, {y}); "
+                  f"apertei {tecla!r}")
+            time.sleep(0.8)
+    print(chr(10) + "Se a bolsa abriu em algum quadrado, anote a tecla que "
+          "funcionou e ponha em LOOT_HOTKEY.")
+    print("Se NENHUM quadrado abriu nada com nenhuma das duas: a hotkey de "
+          "saque rapido nao esta configurada no cliente, ou esta noutra tecla.")
+    print("Se o cursor nem entrou na tela do jogo: GAME_VIEW/TILE_PX estao "
+          "errados para o seu cliente - rode --calib e meca.")
+
+
 def show_teclas():
     """
     Mede QUAIS teclas de movimento realmente andam no seu cliente.
@@ -3330,10 +3440,15 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     if not ENABLE_LOOT or onde is None:
         return False
 
-    if time.time() - estado.get("loot_desde", 0) > LOOT_PRAZO:
+    # o prazo e sobre CHEGAR no corpo, nao sobre varre-lo: varredura em
+    # andamento nao se interrompe pela metade, senao o corpo fica com metade do
+    # loot dentro
+    if (estado.get("loot_fila") is None
+            and time.time() - estado.get("loot_desde", 0) > LOOT_PRAZO):
         print(f"[loot] {LOOT_PRAZO:.0f}s tentando chegar no corpo em {onde}; "
               f"desisto e sigo a rota")
         estado["loot_onde"] = None
+        estado["loot_fila"] = None
         return False
 
     # o corpo nao anda: o que muda e a posicao do personagem, e o offset dele
@@ -3368,22 +3483,42 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
         return True
     if not teclado.isActive:
         focus_window(teclado)
-    # MIRAR ANTES DE APERTAR: a tecla de saque rapido age sobre o que esta
-    # debaixo do cursor. Sem isso ela saia com o mouse sobre o minimapa, do
-    # ultimo clique de rota, e nao pegava nada.
-    mira_mouse(*ponto_do_quadrado(leitura, (int(round(onde[0])),
-                                            int(round(onde[1])))))
-    time.sleep(LOOT_MIRA_PAUSA)
-    pyautogui.press(LOOT_HOTKEY)
+
+    # chegou: agora e varrer os quadrados, do estimado para fora. A fila e
+    # montada uma vez por corpo e consumida algumas por leitura - varrer tudo
+    # numa leitura so seguraria a cura por segundos.
+    fila = estado.get("loot_fila")
+    if fila is None:
+        fila = [q for q in quadrados_do_saque(onde)
+                for _ in range(LOOT_TENTATIVAS)]
+        estado["loot_fila"] = fila
+        print(f"[loot] corpo estimado em {onde[0]:.0f},{onde[1]:.0f}: varro "
+              f"{len(fila) // max(LOOT_TENTATIVAS, 1)} quadrado(s) com "
+              f"{LOOT_HOTKEY!r}"
+              + (" e com o menos do numpad"
+                 if LOOT_HOTKEY_NUMPAD and LOOT_HOTKEY in NUMPAD_DO_SINAL
+                 else ""))
+
+    for _ in range(LOOT_POR_VEZ):
+        if not fila:
+            break
+        quadrado = fila.pop(0)
+        # MIRAR ANTES DE APERTAR: a tecla de saque rapido age sobre o que esta
+        # debaixo do cursor. Sem isso ela saia com o mouse sobre o minimapa, do
+        # ultimo clique de rota, e nao pegava nada.
+        mira_mouse(*ponto_do_quadrado(leitura, quadrado))
+        time.sleep(LOOT_MIRA_PAUSA)
+        aperta_saque()
+        estado["loot_tentativas"] = estado.get("loot_tentativas", 0) + 1
     loot_cd.mark()
-    tentativas = estado.get("loot_tentativas", 0) + 1
-    estado["loot_tentativas"] = tentativas
-    print(f"[loot] {LOOT_HOTKEY} no corpo ({tentativas} de "
-          f"{LOOT_TENTATIVAS})")
-    if tentativas >= LOOT_TENTATIVAS:
+
+    if not fila:
         estado["loot_onde"] = None
+        estado["loot_fila"] = None
+        print(f"[loot] varredura terminada "
+              f"({estado.get('loot_tentativas', 0)} apertadas), volto para a "
+              f"rota")
         estado["loot_tentativas"] = 0
-        print("[loot] pronto, volto para a rota")
         return False
     return True
 
@@ -3410,6 +3545,7 @@ def marca_o_corpo(estado, onde, odo=None, visto_em=None):
     estado["loot_onde"] = (float(onde[0]), float(onde[1]))
     estado["loot_desde"] = time.time()
     estado["loot_tentativas"] = 0
+    estado["loot_fila"] = None            # a fila e deste corpo, nao do anterior
     estado["loot_pos"] = tuple(odo.pos) if odo is not None else (0, 0)
     print(f"[loot] o bicho morreu em {onde}: vou pegar o loot")
 
@@ -4089,6 +4225,9 @@ if __name__ == "__main__":
                         help="Diagnostico do kite: criaturas na tela em SQM.")
     parser.add_argument("--teclas", action="store_true",
                         help="Mede quais teclas de movimento andam no cliente.")
+    parser.add_argument("--loot", action="store_true",
+                        help="Confere o saque: varre os 9 quadrados em volta "
+                             "com as duas teclas de menos.")
     parser.add_argument("--evitar", action="store_true",
                         help="Ensina por clique os quadrados de nao pisar.")
     parser.add_argument("--obs", action="store_true",
@@ -4106,6 +4245,8 @@ if __name__ == "__main__":
             show_kite()
         elif args.teclas:
             show_teclas()
+        elif args.loot:
+            show_loot()
         elif args.evitar:
             record_evitar()
         elif args.record:

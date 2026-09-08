@@ -76,11 +76,34 @@ o personagem andou (kitando, principalmente). O bot guarda *onde ele estava* na
 hora em que viu o bicho e desconta esse trajeto — senão vai buscar o corpo onde
 o corpo estaria se ele não tivesse se mexido.
 
+**O `-` de cima e o `-` do numpad são teclas diferentes.** Para o Windows e para
+o cliente, um é `VK_OEM_MINUS` e o outro é `VK_SUBTRACT`. Com a hotkey de saque
+configurada no numpad e o bot apertando a de cima, não acontecia nada — e o log
+não acusava, porque do lado do bot a tecla tinha sido apertada com sucesso. Foi
+uma das duas causas de "não está lootando nada". Agora o bot manda **as duas**
+(`LOOT_HOTKEY_NUMPAD`): tecla que o cliente não usa não faz nada, então mandar a
+gêmea é mais barato do que descobrir qual é.
+
+**O bot varre os quadrados em volta, não aposta num só** (`LOOT_VARRE`). A
+posição do corpo é uma estimativa — vem do odômetro e de uma barra de vida lida
+uma leitura antes da morte — e errar por 1 SQM é comum. Saque num quadrado
+vizinho ao corpo não pega nada, que era a outra causa. Varrer os 9 quadrados
+custa uma apertada de tecla sobre chão vazio, o que não custa nada, e transforma
+"errou por 1" em "pegou". Vai do estimado para fora, `LOOT_POR_VEZ` por leitura —
+a varredura inteira de uma vez seguraria a cura por segundos.
+
 O loot roda **antes** da rota e dentro da mesma carência dela: sair andando com
 o corpo no chão é deixar o profit para trás, e o loot também anda de clique no
 mapa — clique no meio da briga trocaria *chase* por *stand*. Não chegando no
 corpo em `LOOT_PRAZO`, ele desiste: corpo em cima de escada, ou bicho novo no
-caminho, é loot que não vale a caçada.
+caminho, é loot que não vale a caçada. O prazo vale para **chegar** no corpo, não
+para varrê-lo: varredura em andamento não se corta pela metade, senão metade do
+loot fica dentro do corpo.
+
+Não pegou nada na caçada? `python main.py --loot` confere as três coisas que o
+log não separa — a tecla, a mira e a geometria da tela. Mate um bicho, fique
+colado no corpo e rode: ele varre os 9 quadrados com as duas teclas, dizendo em
+qual está mirando. O quadrado que abrir a bolsa é o certo.
 
 ### Como lutar: stand, chase ou kite
 
@@ -333,6 +356,14 @@ sai primeiro, que é a prioridade, e o resto da leitura continua.
 
 O código está comentado com o *porquê* de cada uma delas.
 
+- **Tecla apertada com sucesso não é tecla que chegou.** O bot não pegava nenhum
+  loot e o log não tinha um único sinal de erro: ele mirava certo e apertava
+  certo, só que o `-` que ele mandava (`VK_OEM_MINUS`, a fileira de cima) não é
+  o `-` do numpad (`VK_SUBTRACT`), onde a hotkey podia estar. O teste do loot
+  não pegava porque `pyautogui.press` era substituído por um espião — do lado do
+  bot, tudo passava. Toda simulação que troca a saída por um espião mede que a
+  decisão está certa, e nunca que ela chegou.
+
 - **Barras de vida/mana por saturação**, não por cor: a barra de HP do Tibia 13
   é verde e muda de cor com o dano.
 - **Coordenadas medidas passam na frente da detecção automática** no tamanho de
@@ -413,7 +444,8 @@ python testes/testa_kite_perseguicao.py  # clique de longe, seta de perto
 python testes/testa_andar.py          # percebe a queda, aprende o quadrado, não repete
 python testes/testa_teclas_config.py  # trocar as teclas das diagonais não derruba
 python testes/testa_erro_no_laco.py   # erro isolado não mata a caçada
-python testes/testa_loot.py           # vai até o corpo, saqueia e volta para a rota
+python testes/testa_loot.py           # vai até o corpo, varre os quadrados, volta à rota
+python testes/testa_loot_no_laco.py   # o loot no laço inteiro: morreu -> marcou -> saqueou
 python testes/testa_heal.py           # cura começando com vida baixa; emergência na frente
 python testes/testa_paralisia.py      # separa pedra de paralisia e conjura a cura
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado

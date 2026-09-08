@@ -2,9 +2,18 @@
 """Pegar o loot do bicho que acabou de morrer.
 
 A tecla de saque rapido do cliente resolve o saque em si; o que o bot tem de
-fazer e CHEGAR PERTO. Em stand o personagem ja esta colado no corpo; em kite ele
-esta a KITE_DIST de distancia. E o corpo nao tem barra de vida: o que se guarda,
-no momento da morte, e onde o bicho estava.
+fazer e CHEGAR PERTO, MIRAR O CURSOR no corpo e APERTAR A TECLA CERTA. Cada um
+dos tres ja falhou sozinho em jogo:
+
+  - chegar perto:  em kite o personagem fica a KITE_DIST do bicho
+  - mirar:         a tecla age sobre o que esta debaixo do cursor, e o cursor
+                   ficava no minimapa, do ultimo clique de rota
+  - a tecla certa: o '-' da fileira de cima e o '-' do numpad sao teclas
+                   diferentes, e a hotkey do cliente pode estar em qualquer uma
+
+E o corpo nao tem barra de vida: o que se guarda, no momento da morte, e onde o
+bicho estava - uma estimativa que erra por 1 SQM com facilidade, dai a
+varredura dos quadrados em volta.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(
@@ -60,48 +69,82 @@ main.pyautogui = type("P", (), {
 main.time = type("T", (), {"time": staticmethod(lambda: relogio["t"]),
                            "sleep": staticmethod(lambda s: None)})()
 
+
+def saqueia_ate_o_fim(estado, voltas=40):
+    """Roda o loot ate ele largar o corpo, como o laco faria."""
+    for _ in range(voltas):
+        relogio["t"] += 0.5
+        if not main.loot(Janela(), Janela(), estado, SemEspera(), odo):
+            return True
+    return False
+
+
 falhas = []
-print(f"tecla de saque: {main.LOOT_HOTKEY!r} | alcance: {main.LOOT_DIST} SQM | "
-      f"apertadas por corpo: {main.LOOT_TENTATIVAS}\n")
+QUADRADOS = len(main.quadrados_do_saque((0, 0)))
+POR_QUADRADO = main.LOOT_TENTATIVAS
+print(f"tecla de saque: {main.LOOT_HOTKEY!r}"
+      + (f" + {main.NUMPAD_DO_SINAL[main.LOOT_HOTKEY]!r} (numpad)"
+         if main.LOOT_HOTKEY_NUMPAD and main.LOOT_HOTKEY in main.NUMPAD_DO_SINAL
+         else "")
+      + f" | alcance: {main.LOOT_DIST} SQM")
+print(f"varredura: {QUADRADOS} quadrado(s) x {POR_QUADRADO} apertada(s), "
+      f"{main.LOOT_POR_VEZ} por leitura\n")
 
 # ----------------------------------------- 1) em stand: o corpo esta colado
 estado = {}
 main.marca_o_corpo(estado, (1, 0), odo)
-acoes.clear()
-for _ in range(6):
-    relogio["t"] += 0.5
-    if not main.loot(Janela(), Janela(), estado, SemEspera(), odo):
-        break
-teclas = [a for a in acoes if a[0] == "tecla"]
+acoes.clear(); mirado.clear()
+acabou = saqueia_ate_o_fim(estado)
+miradas = len(mirado)
 cliques = [a for a in acoes if a[0] == "clique"]
-print(f"corpo colado (1 SQM): {len(teclas)} apertada(s), "
-      f"{len(cliques)} clique(s)")
-if len(teclas) != main.LOOT_TENTATIVAS:
-    falhas.append(f"colado: {len(teclas)} apertadas, esperava "
-                  f"{main.LOOT_TENTATIVAS}")
+print(f"corpo colado (1 SQM): {miradas} mirada(s), {len(cliques)} clique(s), "
+      f"terminou? {acabou}")
+if not acabou:
+    falhas.append("colado: a varredura nunca terminou")
+if miradas != QUADRADOS * POR_QUADRADO:
+    falhas.append(f"colado: {miradas} miradas, esperava "
+                  f"{QUADRADOS * POR_QUADRADO}")
 if cliques:
     falhas.append("colado: andou sem precisar")
+
+# ------------------------- 1b) varreu QUADRADOS DIFERENTES, e nao o mesmo 27x
+alvos = {m for m in mirado}
+print(f"  quadrados distintos mirados: {len(alvos)} (esperava {QUADRADOS})")
+if len(alvos) != QUADRADOS:
+    falhas.append(f"varreu {len(alvos)} quadrados distintos, esperava "
+                  f"{QUADRADOS}: a estimativa erra por 1 SQM e sem varrer o "
+                  f"anel o bot nao pega nada")
+# o estimado tem de vir PRIMEIRO: e o mais provavel
+if mirado and mirado[0] != main.ponto_do_quadrado(Janela(), (1, 0)):
+    falhas.append(f"comecou por {mirado[0]}, e nao pelo quadrado estimado "
+                  f"{main.ponto_do_quadrado(Janela(), (1, 0))}")
+
+# -------------------- 1c) a tecla do NUMPAD tambem sai (hotkey pode estar la)
+teclas = {a[1] for a in acoes if a[0] == "tecla"}
+print(f"  teclas mandadas: {sorted(teclas)}")
+if main.LOOT_HOTKEY not in teclas:
+    falhas.append(f"nao mandou {main.LOOT_HOTKEY!r}")
+gemea = main.NUMPAD_DO_SINAL.get(main.LOOT_HOTKEY)
+if main.LOOT_HOTKEY_NUMPAD and gemea and gemea not in teclas:
+    falhas.append(f"nao mandou {gemea!r}: com a hotkey do cliente no menos do "
+                  f"numpad (VK_SUBTRACT), o '-' de cima (VK_OEM_MINUS) nao "
+                  f"chega la e o bot nao pega nada")
 
 # --------------------------------- 2) em kite: o corpo esta a 4 SQM, precisa ir
 odo.pos = [0, 0]
 estado = {}
 main.marca_o_corpo(estado, (4, 0), odo)
-acoes.clear()
-for _ in range(10):
-    relogio["t"] += 0.5
-    if not main.loot(Janela(), Janela(), estado, SemEspera(), odo):
-        break
-teclas = [a for a in acoes if a[0] == "tecla"]
+acoes.clear(); mirado.clear()
+acabou = saqueia_ate_o_fim(estado)
 cliques = [a for a in acoes if a[0] == "clique"]
-print(f"corpo a 4 SQM:       {len(teclas)} apertada(s), "
+print(f"\ncorpo a 4 SQM:       {len(mirado)} mirada(s), "
       f"{len(cliques)} clique(s) {[c[1] for c in cliques]}")
 print(f"  posicao final do personagem: {tuple(odo.pos)} "
       f"(em px de minimapa, {main.MINIMAP_PX_SQM} = 1 SQM)")
 if not cliques:
     falhas.append("longe: nao andou ate o corpo")
-if len(teclas) != main.LOOT_TENTATIVAS:
-    falhas.append(f"longe: {len(teclas)} apertadas, esperava "
-                  f"{main.LOOT_TENTATIVAS}")
+if not acabou:
+    falhas.append("longe: nao terminou de saquear")
 
 # ------------------------------- 3) o corpo nao anda: o offset acompanha o char
 odo.pos = [0, 0]
@@ -127,13 +170,30 @@ print(f"passado o prazo de {main.LOOT_PRAZO:.0f}s sem chegar: "
       f"{'desistiu' if not segue else 'ainda insistindo'}")
 if segue or estado.get("loot_onde") is not None:
     falhas.append("nao desistiu do corpo inalcancavel")
+main.click_minimap = clica
+
+# ---------------- 4b) mas o prazo NAO corta uma varredura ja em andamento
+odo.pos = [0, 0]
+estado = {}
+main.marca_o_corpo(estado, (1, 0), odo)
+mirado.clear()
+main.loot(Janela(), Janela(), estado, SemEspera(), odo)   # comeca a varrer
+relogio["t"] += main.LOOT_PRAZO + 1                       # estoura o prazo
+antes = len(mirado)
+acabou = saqueia_ate_o_fim(estado)
+print(f"prazo estourado no MEIO da varredura: continuou? "
+      f"{len(mirado) > antes} ({len(mirado)} miradas no total)")
+if len(mirado) != QUADRADOS * POR_QUADRADO:
+    falhas.append(f"o prazo cortou a varredura pela metade: {len(mirado)} "
+                  f"miradas de {QUADRADOS * POR_QUADRADO} - metade do loot "
+                  f"ficaria dentro do corpo")
 
 # ------------------------------------------- 5) desligado nao faz nada
 main.ENABLE_LOOT = False
 estado = {}
 main.marca_o_corpo(estado, (1, 0), odo)
 acoes.clear()
-print(f"com ENABLE_LOOT desligado: guardou corpo? "
+print(f"\ncom ENABLE_LOOT desligado: guardou corpo? "
       f"{estado.get('loot_onde') is not None}, agiu? {bool(acoes)}")
 if estado.get("loot_onde") is not None or acoes:
     falhas.append("desligado e mesmo assim mexeu")
@@ -149,7 +209,7 @@ main.marca_o_corpo(estado, (1, 0), odo)
 mirado.clear()
 main.loot(Janela(), Janela(), estado, SemEspera(), odo)
 esperado = main.ponto_do_quadrado(Janela(), (1, 0))
-print(f"\nmirou em {mirado[:1]}, quadrado do corpo em {esperado}")
+print(f"mirou em {mirado[:1]}, quadrado do corpo em {esperado}")
 if not mirado:
     falhas.append("apertou a tecla sem mirar o cursor no corpo")
 elif mirado[0] != esperado:
@@ -159,11 +219,24 @@ elif mirado[0] != esperado:
 estado = {}
 odo.pos = [6, 0]                       # andou 3 SQM desde que viu o bicho
 main.marca_o_corpo(estado, (4, 0), odo, visto_em=(0, 0))
-print(f"viu o bicho a 4 SQM e andou 3 na direcao dele -> corpo em "
+print(f"\nviu o bicho a 4 SQM e andou 3 na direcao dele -> corpo em "
       f"{estado['loot_onde']}")
 if abs(estado["loot_onde"][0] - 1) > 0.1:
     falhas.append(f"nao descontou o caminho andado: {estado['loot_onde']} "
                   f"(esperava perto de (1, 0))")
 
-print("\nVEREDITO:", "OK - vai ate o corpo, saqueia e volta para a rota"
+# ------------- 8) corpo novo nao herda a fila do anterior
+estado = {}
+odo.pos = [0, 0]
+main.marca_o_corpo(estado, (1, 0), odo)
+main.loot(Janela(), Janela(), estado, SemEspera(), odo)    # deixa fila pela metade
+sobrou = len(estado.get("loot_fila") or [])
+main.marca_o_corpo(estado, (0, 1), odo)                    # outro bicho morreu
+print(f"corpo novo com {sobrou} quadrados pendentes do anterior: fila agora "
+      f"= {estado.get('loot_fila')}")
+if estado.get("loot_fila") is not None:
+    falhas.append("o corpo novo herdou a fila do anterior: varreria em volta "
+                  "do corpo errado")
+
+print("\nVEREDITO:", "OK - vai ate o corpo, varre os quadrados e volta a rota"
       if not falhas else "FALHOU: " + "; ".join(falhas))
