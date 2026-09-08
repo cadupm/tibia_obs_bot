@@ -20,8 +20,10 @@
   "TARGET_GONE_READS": 3,
   "KITE_DIST": 4,
   "KITE_COOLDOWN": 0.35,
+  "KITE_CLIQUE": 2,
   "KITE_BLOQUEIO": 3.0,
   "KITE_DIAGONAIS": true,
+  "KITE_DIAGONAIS_TECLAS": "q,e,z,c",
   "PARAR_SE_MUDAR_ANDAR": true,
   "ENABLE_SPELL": true,
   "SPELL_HOTKEY": "f1",
@@ -69,8 +71,6 @@
       "intervalo": 300.0
     }
   ],
-  "KITE_CLIQUE": 2,
-  "KITE_CLIQUE_ESPERA": 1.5,
-  "KITE_PISADO_MAX": 400,
-  "KITE_DIAGONAIS_TECLAS": "num7,num9,num1,num3"
+  "EVITAR_DIFF_MAX": 6,
+  "EVITAR_CORR_MIN": 0.95
 }

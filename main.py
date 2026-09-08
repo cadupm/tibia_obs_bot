@@ -23,6 +23,7 @@ tudo e devolvido ao estado anterior.
 """
 
 import argparse
+import traceback
 import ctypes
 import json
 import os
@@ -271,13 +272,36 @@ def monta_passos():
 
 
 KITE_PASSOS = monta_passos()
+
+
+def atualiza_passos():
+    """
+    Refaz KITE_PASSOS a partir da configuracao atual.
+
+    Precisa existir porque o dicionario e montado no import, com as teclas
+    PADRAO: mudando KITE_DIAGONAIS_TECLAS na GUI, a decisao passava a devolver
+    teclas novas ("q") e quem consultava o dicionario velho estourava
+    KeyError - e derrubava o bot no meio da cacada, que e o pior lugar para
+    parar. Chamado no arranque de todo modo e depois de aplicar a configuracao.
+    """
+    global KITE_PASSOS
+    KITE_PASSOS = monta_passos()
+    return KITE_PASSOS
 # Quadrados em que NAO se pisa: escada, buraco, portal. Sao ensinados por
 # clique ("python main.py --evitar") e guardados em evitar.json. A comparacao e
 # por assinatura reduzida (um pixel a cada 4), que aguenta a animacao do chao.
 EVITAR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "evitar.json")
 EVITAR_PASSO = 4                # de quantos em quantos pixels a assinatura pega
-EVITAR_DIFF_MAX = 22            # diferenca media maxima para ser o mesmo chao
+EVITAR_DIFF_MAX = 6             # diferenca media para ser o MESMO chao sem nem
+                                # precisar de conta. Era 22 e casava 35% dos
+                                # pares de quadrados DIFERENTES da caverna.
+EVITAR_CORR_MIN = 0.95          # ... ou o mesmo desenho com outro brilho, por
+                                # correlacao: acima disso so 0,06% dos pares de
+                                # quadrados diferentes casam, e o mesmo quadrado
+                                # escurecido ate 50% da 1,000.
+EVITAR_VAR_MIN = 4              # desvio minimo dentro do quadrado para valer a
+                                # pena guardar: chao chapado nao identifica nada
 PARAR_SE_MUDAR_ANDAR = True     # mudou de andar durante o kite? para o bot.
                                 # Cair num buraco fugindo de bicho e queda sem
                                 # volta automatica, e o lugar onde se cai pode
@@ -401,6 +425,10 @@ HUMANIZE = True
 WALK_JITTER_MAX = 0        # px de desvio no clique; suba se quiser mais variacao
 WALK_STEP_MIN = 1.0        # 1.0 = clica o vetor inteiro que falta
 
+ERROS_SEGUIDOS_MAX = 5          # leituras seguidas com erro antes de parar de
+                                # vez. Uma leitura ruim nao pode matar a
+                                # cacada; cinco em sequencia significam que algo
+                                # mudou de verdade.
 LOOP_DELAY = 0.15          # intervalo do while True
 STOP = False               # parada por codigo (alem do KILL_KEY)
 KILL_KEY = "ctrl+alt+s"    # F12 nao serve: no jogo F12 e a pa
@@ -2115,15 +2143,36 @@ def save_evitar(lugares, caminho=None):
 
 
 def tile_proibido(tile, lugares):
-    """Nome do lugar a evitar que este quadrado parece ser, ou None."""
+    """
+    Nome do lugar a evitar que este quadrado parece ser, ou None.
+
+    Comparar por diferenca media de pixel NAO serve aqui, e isso esta medido nos
+    98 quadrados da captura da caverna: com a folga de 22 que estava em uso, 35%
+    dos pares de quadrados DIFERENTES passavam por iguais - um unico lugar
+    aprendido bloqueava 7 dos 8 lados e o bot ficava paralisado ao lado do bicho
+    ("7 lado(s) fora (0 por parede)" no log). So baixar a folga tambem nao
+    resolve: o chao muda de brilho com a luz.
+
+    O que separa e a CORRELACAO, que desconta brilho e escala. Na mesma captura:
+    quadrados diferentes ficam em 0,04 de mediana (99% abaixo de 0,59), e o
+    mesmo quadrado escurecido ate 50% da 1,000. Acima de 0,95 apenas 0,06% dos
+    pares casam por acidente.
+    """
     if tile is None or not lugares:
         return None
-    assinatura = assinatura_tile(tile).astype(np.int16)
+    assinatura = assinatura_tile(tile).astype(np.float32).ravel()
+    centrada = assinatura - assinatura.mean()
+    forca = float((centrada * centrada).sum())
     for nome, modelo in lugares.items():
-        if modelo.shape != assinatura.shape:
+        plano = modelo.astype(np.float32).ravel()
+        if plano.shape != assinatura.shape:
             continue
-        if float(np.abs(assinatura - modelo.astype(np.int16)).mean()) \
-                <= EVITAR_DIFF_MAX:
+        if float(np.abs(assinatura - plano).mean()) <= EVITAR_DIFF_MAX:
+            return nome                    # identico, nem precisa de conta
+        outro = plano - plano.mean()
+        escala = (forca * float((outro * outro).sum())) ** 0.5
+        if escala > 1e-6 and float((centrada * outro).sum()) / escala \
+                >= EVITAR_CORR_MIN:
             return nome
     return None
 
@@ -2720,9 +2769,8 @@ def passo_de_kite(criaturas, distancia=None, proibidos=(), pisado=(),
                 sum((dx * dx + dy * dy) ** 0.5 for dx, dy in lista))
         return (seguro, -abs(perto - distancia), reta)
 
-    todos = monta_passos()             # a configuracao pode ter mudado na GUI
-    passos = todos if KITE_DIAGONAIS else {
-        t: p for t, p in todos.items() if 0 in p}
+    passos = KITE_PASSOS if KITE_DIAGONAIS else {
+        t: p for t, p in KITE_PASSOS.items() if 0 in p}
     def conhecido(px, py):
         """O destino deste passo e chao por onde o personagem ja andou?"""
         if aqui is None or not pisado:
@@ -2819,7 +2867,9 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
             del bloqueados[tecla_bloqueada]
             continue
         parados.append(tecla_bloqueada)
-        proibidos.add(KITE_PASSOS[tecla_bloqueada])
+        rumo = KITE_PASSOS.get(tecla_bloqueada)
+        if rumo is not None:               # tecla que saiu da configuracao
+            proibidos.add(rumo)
 
     perto = longe_o_bastante(criaturas)
 
@@ -2887,7 +2937,7 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
     # guarda a tela e o lado: caindo de andar, e daqui que sai o retrato do
     # quadrado que fez cair, para nunca mais pisar nele
     estado["tela_antes"] = img
-    estado["passo_dado"] = KITE_PASSOS[tecla]
+    estado["passo_dado"] = KITE_PASSOS.get(tecla)
     print(f"[kite] {len(criaturas)} bicho(s), o mais perto a {perto} SQM: "
           f"ando para {tecla}"
           + (f" (evitando {len(proibidos)} lado(s))" if proibidos else ""))
@@ -2959,6 +3009,10 @@ def record_evitar(segundos=120.0):
         if ja:
             print(f"[evitar] esse quadrado ja e '{ja}'")
             continue
+        if float(assinatura_tile(tile).std()) < EVITAR_VAR_MIN:
+            print("[evitar] esse quadrado e chapado demais (sem desenho) para "
+                  "reconhecer depois; clique num com a escada visivel")
+            continue
         nome = f"lugar{len(lugares) + 1}"
         lugares[nome] = assinatura_tile(tile)
         novos += 1
@@ -3000,6 +3054,10 @@ def aprende_o_que_derrubou(estado, lugares):
         return None
     if tile_proibido(tile, lugares):
         return None                        # ja conhecido; caiu de outro jeito
+    if float(assinatura_tile(tile).std()) < EVITAR_VAR_MIN:
+        print("[evitar] o quadrado que me derrubou e chapado demais para "
+              "reconhecer depois; nao guardei")
+        return None
     nome = f"queda{len(lugares) + 1}"
     lugares[nome] = assinatura_tile(tile)
     save_evitar(lugares)
@@ -3022,6 +3080,7 @@ def show_teclas():
 
     Precisa de um lugar sem parede em volta: parede tambem da "nao andou".
     """
+    atualiza_passos()          # a configuracao manda nas teclas
     leitura, teclado = setup_windows()
     if not leitura:
         return
@@ -3443,6 +3502,7 @@ def calibrate():
 
 def run_bot():
     """Loop principal do bot."""
+    atualiza_passos()          # a configuracao manda nas teclas
     leitura, teclado = setup_windows()
     if not leitura:
         return
@@ -3508,220 +3568,235 @@ def run_bot():
         print(f"[walk] {len(caminho['pontos'])} waypoints carregados de "
               f"{WAYPOINTS_FILE}")
 
+    seguidos = 0                       # erros em sequencia
     while True:
-        if STOP:
-            print("[stop] parada solicitada por codigo.")
-            break
-        if keyboard.is_pressed(KILL_KEY):
-            print("\n[stop] Ctrl+Alt+S pressionado.")
-            break
+        # UMA LEITURA RUIM NAO PODE MATAR A CACADA. Um KeyError numa
+        # leitura derrubou o bot no meio de uma cave, e o personagem fica
+        # la sendo comido. Erro isolado entra no log e a volta seguinte
+        # tenta de novo; erros em sequencia significam que algo mudou de
+        # verdade (janela fechada, layout diferente) e ai se para.
+        try:
+            if STOP:
+                print("[stop] parada solicitada por codigo.")
+                break
+            if keyboard.is_pressed(KILL_KEY):
+                print("\n[stop] Ctrl+Alt+S pressionado.")
+                break
 
-        # as janelas podem ser fechadas/minimizadas no meio do caminho
-        if not is_usable(teclado) or not is_usable(leitura):
-            print("[warn] janela minimizada ou fechada, aguardando...")
-            time.sleep(1.0)
-            leitura_nova = find_projector() if OBS_MODE else find_tibia()
-            teclado_nova = find_tibia()
-            if leitura_nova and teclado_nova:
-                leitura, teclado = leitura_nova, teclado_nova
-            continue
+            # as janelas podem ser fechadas/minimizadas no meio do caminho
+            if not is_usable(teclado) or not is_usable(leitura):
+                print("[warn] janela minimizada ou fechada, aguardando...")
+                time.sleep(1.0)
+                leitura_nova = find_projector() if OBS_MODE else find_tibia()
+                teclado_nova = find_tibia()
+                if leitura_nova and teclado_nova:
+                    leitura, teclado = leitura_nova, teclado_nova
+                continue
 
-        # nunca enviar teclas se o jogo nao estiver em foco
-        if not teclado.isActive:
-            sem_foco = True
-            time.sleep(0.5)
-            continue
-        if sem_foco:
-            if odo:
-                odo.resync()      # nao inventar deslocamento durante a pausa
-            print("[bot] foco de volta")
-            sem_foco = False
+            # nunca enviar teclas se o jogo nao estiver em foco
+            if not teclado.isActive:
+                sem_foco = True
+                time.sleep(0.5)
+                continue
+            if sem_foco:
+                if odo:
+                    odo.resync()      # nao inventar deslocamento durante a pausa
+                print("[bot] foco de volta")
+                sem_foco = False
 
-        hp, mana = read_bars(leitura)
+            hp, mana = read_bars(leitura)
 
-        # leitura zerada = personagem morto ou janela coberta: nao vale agir
-        if hp <= 0.005:
-            print(f"[warn] hp lido em {hp:.1%}: morto ou janela coberta, pausando.")
-            time.sleep(1.0)
-            continue
+            # leitura zerada = personagem morto ou janela coberta: nao vale agir
+            if hp <= 0.005:
+                print(f"[warn] hp lido em {hp:.1%}: morto ou janela coberta, pausando.")
+                time.sleep(1.0)
+                continue
 
-        # 1) prioridade: se curou nesta iteracao, nao faz mais nada
-        agiu = auto_heal(hp, mana, heal_cd, mana_cd)
-        if agiu == "mana":
-            time.sleep(LOOP_DELAY)
-            continue
-        if agiu:
-            # cura que nao levanta a vida e sinal de pocao acabada, hotkey
-            # errada ou dano maior que a cura - vale avisar em vez de martelar
-            if hp_da_ultima_cura is not None and hp <= hp_da_ultima_cura:
-                curas_sem_efeito += 1
-                if curas_sem_efeito == HEAL_WARN_AFTER:
-                    print(f"[warn] {HEAL_WARN_AFTER} curas seguidas e a vida nao "
-                          f"subiu (parada em {formata(hp, HP_MAX)}): acabou a "
-                          f"pocao, a hotkey esta errada ou o dano e maior que a "
-                          f"cura")
-            else:
-                curas_sem_efeito = 0
-            hp_da_ultima_cura = hp
-            time.sleep(LOOP_DELAY)
-            continue
-
-        # 2) autocast: teclas de intervalo fixo, depois da cura
-        run_autocast(auto_cds, mana)
-
-        # 3) combo: engaja quem estiver sem alvo, e conjura no alvo engajado
-        entradas, alvo, alvo_hp, sprites, alvo_sprite = battle_state(leitura)
-        monstros, aprendido = auto_learn(alvo_sprite, monstros)
-
-        # filtro ligado com a lista vazia + auto-aprendizado seria um impasse:
-        # nao ataca porque nao conhece, e nao conhece porque nunca ataca. Nesse
-        # caso o filtro fica suspenso ate o primeiro sprite entrar na lista.
-        prontos = sum(1 for sp in monstros.values() if sp is not None)
-        filtrar = ONLY_KNOWN_MONSTERS and not (AUTO_LEARN and prontos == 0)
-        if ONLY_KNOWN_MONSTERS and not filtrar and not avisou_impasse:
-            print("[monstros] filtro ligado sem nenhum sprite: ataco livremente "
-                  "ate aprender o primeiro, senao nunca aprenderia")
-            avisou_impasse = True
-        atacaveis = monstros_atacaveis(sprites, monstros, filtrar)
-        sem_alvo = 0 if alvo else sem_alvo + 1
-
-        # so troca de alvo quando o bicho engajado sumir da battle list
-        pode_trocar = trava.atualiza(alvo, alvo_sprite, sprites)
-
-        # a lista mudou? volta a valer a pena tentar atacar
-        assinatura = battle_assinatura(sprites)
-        if assinatura != assinatura_vista:
-            assinatura_vista, sem_resposta = assinatura, 0
-            lista_inutil = None
-        if alvo:
-            sem_resposta, lista_inutil = 0, None
-
-        # lista que ja provou nao responder ao ataque (NPC, player) nao conta
-        # como bicho para NADA: nem para apertar tecla, nem para segurar a rota.
-        # Antes o freio calava a tecla mas o trajeto seguia cancelado, e um NPC
-        # parado perto travava o cave inteiro.
-        if lista_inutil == assinatura:
-            atacaveis = 0
-
-        # Cancelar o trajeto vem ANTES de atacar: a tecla de parada do cliente
-        # solta tambem o alvo, entao mandada depois ela mataria o ataque que
-        # acabou de sair - o bot apertava, perdia o alvo e so reengajava depois
-        # de ATTACK_CONFIRM leituras.
-        if ENABLE_WALK and (atacaveis or alvo) and not parou_por_bicho:
-            # a tecla de parada e do modo STAND. Em chase ela cancelaria o
-            # follow do cliente junto com o ataque, e em kite quem manda no
-            # movimento sao as setas.
-            parou = (parar_de_andar(leitura, teclado)
-                     if ATTACK_MODE == "stand" else False)
-            caminho["cliques"] = 0
-            parou_por_bicho = True
-            print(f"[walk] {atacaveis} atacavel(is) na lista: "
-                  + (f"trajeto cancelado com {STOP_WALK_KEY}, lutando primeiro"
-                     if parou else
-                     f"paro de clicar, lutando em modo {ATTACK_MODE}"))
-            if parou:
-                # o ataque so depois que a parada foi processada: as duas teclas
-                # sairiam com milissegundos de diferenca e o cliente poderia
-                # tratar a parada DEPOIS do ataque - soltando o alvo que acabou
-                # de ser pego. Este respiro custa um quarto de segundo, uma vez
-                # por briga.
-                time.sleep(STOP_ATTACK_DELAY)
-
-        apertou = attack_monster(teclado, atacaveis, alvo, attack_cd,
-                                 confirmado=sem_alvo >= ATTACK_CONFIRM,
-                                 sprites=sprites, monstros=monstros,
-                                 permitido=(lista_inutil != assinatura
-                                            and pode_trocar))
-        if apertou:
-            espera_magia = time.time() + SPELL_DELAY_AFTER_ATTACK
-            sem_resposta += 1
-            if sem_resposta >= ATTACK_GIVEUP:
-                lista_inutil = assinatura
-                print(f"[attack] {atacaveis} entrada(s) nao engajaram em "
-                      f"{sem_resposta} tentativas: NPC ou player? Paro de apertar "
-                      f"{ATTACK_HOTKEY} ate a lista mudar.")
-        cast_spell(alvo, mana, spell_cd, espera_magia)
-
-        # LUTANDO: qualquer entrada na battle list segura o trajeto, nao so a
-        # que conta como atacavel - bicho ainda nao aprendido, ou com o sprite
-        # escurecido por estar quase morto, tambem e bicho vivo do lado do
-        # personagem. A excecao e a lista que ja provou nao responder ao ataque
-        # (NPC, player): essa nao morre nunca e travaria o cave.
-        so_inuteis = lista_inutil == assinatura
-        lutando = ((entradas > 0 and not so_inuteis)
-                   or bool(alvo) or not pode_trocar)
-
-        # 4) kite: e comportamento de COMBATE, nao de rota - roda mesmo com o
-        # andar desligado. Ficava dentro do bloco da rota e nao acontecia nada
-        # para quem so quer o bot lutando.
-        if lutando and ATTACK_MODE == "kite":
-            # bicho na lista mas fora da tela: a tela alcanca 7 SQM de lado e 5
-            # de altura, e o que corre alem disso o bot nao ve. Sem este aviso
-            # nao ha como saber, num log, se ele "nao perseguiu" por isso ou por
-            # decisao errada.
-            if entradas > 0 and not detect_creatures(leitura):
-                sem_ver = estado_kite.get("sem_ver", 0) + 1
-                estado_kite["sem_ver"] = sem_ver
-                if sem_ver == KITE_AVISA_SEM_VER:
-                    print(f"[kite] {entradas} na battle list e nenhum bicho na "
-                          f"tela: correu para fora do alcance da tela "
-                          f"(7 SQM de lado, 5 de altura)")
-            else:
-                estado_kite["sem_ver"] = 0
-            if odo_kite is None:
-                odo_kite = Odometro(leitura)
-            odo_kite.atualiza()
-            if odo_kite.mudou_de_andar():
-                aprendido = aprende_o_que_derrubou(estado_kite, evitar_lugares)
-                print("[kite] O MINIMAPA TROCOU POR INTEIRO: mudei de andar "
-                      "(escada, buraco ou portal)."
-                      + (f" Guardei o quadrado como '{aprendido}': nao piso "
-                         f"nele de novo." if aprendido else ""))
-                if PARAR_SE_MUDAR_ANDAR:
-                    print("      Parando o bot - dai em diante quem decide "
-                          "e voce.")
-                    break
-                odo_kite = None            # o andar novo tem outra textura
-            kite(leitura, teclado, kite_cd, evitar_lugares,
-                 odo=odo_kite, estado=estado_kite)
-
-        # 5) segue o cave. A posicao e integrada SEMPRE, inclusive durante a
-        # briga: e isso que faz o reclique depois da luta cair no lugar certo.
-        if ENABLE_WALK:
-            odo.atualiza()
-            # LUTANDO NAO SE ANDA, e a razao nao e so nao puxar monstro: no
-            # cliente, tecla de direcao ou clique no mapa durante o ataque troca
-            # o modo de luta de "chase" para "stand".
-            if USE_MAP_MARKS:
-                # acompanha as marcas SEMPRE, inclusive lutando: se o rastreio
-                # para durante a briga, ao voltar o bot nao sabe mais de onde
-                # veio e a regra de ouro manda ele para tras. Lutando, porem, o
-                # que o bicho empurra nao conta como visita.
-                track_marks(leitura, caminho, andando=not lutando,
-                            odo=odo)
-            # O trajeto so volta depois de a lista ficar limpa por VARIAS
-            # leituras seguidas. Uma leitura ruim no meio da briga nao pode
-            # virar clique no mapa: no cliente, clique no mapa durante o ataque
-            # troca o modo de luta de "chase" para "stand". Perder meio segundo
-            # aqui e barato; trocar o modo do personagem, nao.
-            limpo = 0 if lutando else limpo + 1
-            if not lutando and limpo >= WALK_RESUME_READS:
-                if parou_por_bicho:
-                    print(f"[walk] battle list limpa por {limpo} leituras, "
-                          f"retomando o trajeto")
-                    parou_por_bicho = False
-                    caminho["cliques"] = 0
-                if rota_gravada:
-                    follow_route(leitura, odo, caminho, click_cd)
-                elif USE_MAP_MARKS:
-                    follow_marks(leitura, odo, caminho, click_cd)
+            # 1) prioridade: se curou nesta iteracao, nao faz mais nada
+            agiu = auto_heal(hp, mana, heal_cd, mana_cd)
+            if agiu == "mana":
+                time.sleep(LOOP_DELAY)
+                continue
+            if agiu:
+                # cura que nao levanta a vida e sinal de pocao acabada, hotkey
+                # errada ou dano maior que a cura - vale avisar em vez de martelar
+                if hp_da_ultima_cura is not None and hp <= hp_da_ultima_cura:
+                    curas_sem_efeito += 1
+                    if curas_sem_efeito == HEAL_WARN_AFTER:
+                        print(f"[warn] {HEAL_WARN_AFTER} curas seguidas e a vida nao "
+                              f"subiu (parada em {formata(hp, HP_MAX)}): acabou a "
+                              f"pocao, a hotkey esta errada ou o dano e maior que a "
+                              f"cura")
                 else:
-                    follow_waypoints(leitura, odo, caminho, click_cd,
-                                     teclado, key_cd)
-            # o cancelamento do trajeto ja aconteceu la em cima, antes do
-            # ataque: a tecla de parada solta o alvo junto e nao pode vir depois
+                    curas_sem_efeito = 0
+                hp_da_ultima_cura = hp
+                time.sleep(LOOP_DELAY)
+                continue
 
-        time.sleep(LOOP_DELAY)
+            # 2) autocast: teclas de intervalo fixo, depois da cura
+            run_autocast(auto_cds, mana)
+
+            # 3) combo: engaja quem estiver sem alvo, e conjura no alvo engajado
+            entradas, alvo, alvo_hp, sprites, alvo_sprite = battle_state(leitura)
+            monstros, aprendido = auto_learn(alvo_sprite, monstros)
+
+            # filtro ligado com a lista vazia + auto-aprendizado seria um impasse:
+            # nao ataca porque nao conhece, e nao conhece porque nunca ataca. Nesse
+            # caso o filtro fica suspenso ate o primeiro sprite entrar na lista.
+            prontos = sum(1 for sp in monstros.values() if sp is not None)
+            filtrar = ONLY_KNOWN_MONSTERS and not (AUTO_LEARN and prontos == 0)
+            if ONLY_KNOWN_MONSTERS and not filtrar and not avisou_impasse:
+                print("[monstros] filtro ligado sem nenhum sprite: ataco livremente "
+                      "ate aprender o primeiro, senao nunca aprenderia")
+                avisou_impasse = True
+            atacaveis = monstros_atacaveis(sprites, monstros, filtrar)
+            sem_alvo = 0 if alvo else sem_alvo + 1
+
+            # so troca de alvo quando o bicho engajado sumir da battle list
+            pode_trocar = trava.atualiza(alvo, alvo_sprite, sprites)
+
+            # a lista mudou? volta a valer a pena tentar atacar
+            assinatura = battle_assinatura(sprites)
+            if assinatura != assinatura_vista:
+                assinatura_vista, sem_resposta = assinatura, 0
+                lista_inutil = None
+            if alvo:
+                sem_resposta, lista_inutil = 0, None
+
+            # lista que ja provou nao responder ao ataque (NPC, player) nao conta
+            # como bicho para NADA: nem para apertar tecla, nem para segurar a rota.
+            # Antes o freio calava a tecla mas o trajeto seguia cancelado, e um NPC
+            # parado perto travava o cave inteiro.
+            if lista_inutil == assinatura:
+                atacaveis = 0
+
+            # Cancelar o trajeto vem ANTES de atacar: a tecla de parada do cliente
+            # solta tambem o alvo, entao mandada depois ela mataria o ataque que
+            # acabou de sair - o bot apertava, perdia o alvo e so reengajava depois
+            # de ATTACK_CONFIRM leituras.
+            if ENABLE_WALK and (atacaveis or alvo) and not parou_por_bicho:
+                # a tecla de parada e do modo STAND. Em chase ela cancelaria o
+                # follow do cliente junto com o ataque, e em kite quem manda no
+                # movimento sao as setas.
+                parou = (parar_de_andar(leitura, teclado)
+                         if ATTACK_MODE == "stand" else False)
+                caminho["cliques"] = 0
+                parou_por_bicho = True
+                print(f"[walk] {atacaveis} atacavel(is) na lista: "
+                      + (f"trajeto cancelado com {STOP_WALK_KEY}, lutando primeiro"
+                         if parou else
+                         f"paro de clicar, lutando em modo {ATTACK_MODE}"))
+                if parou:
+                    # o ataque so depois que a parada foi processada: as duas teclas
+                    # sairiam com milissegundos de diferenca e o cliente poderia
+                    # tratar a parada DEPOIS do ataque - soltando o alvo que acabou
+                    # de ser pego. Este respiro custa um quarto de segundo, uma vez
+                    # por briga.
+                    time.sleep(STOP_ATTACK_DELAY)
+
+            apertou = attack_monster(teclado, atacaveis, alvo, attack_cd,
+                                     confirmado=sem_alvo >= ATTACK_CONFIRM,
+                                     sprites=sprites, monstros=monstros,
+                                     permitido=(lista_inutil != assinatura
+                                                and pode_trocar))
+            if apertou:
+                espera_magia = time.time() + SPELL_DELAY_AFTER_ATTACK
+                sem_resposta += 1
+                if sem_resposta >= ATTACK_GIVEUP:
+                    lista_inutil = assinatura
+                    print(f"[attack] {atacaveis} entrada(s) nao engajaram em "
+                          f"{sem_resposta} tentativas: NPC ou player? Paro de apertar "
+                          f"{ATTACK_HOTKEY} ate a lista mudar.")
+            cast_spell(alvo, mana, spell_cd, espera_magia)
+
+            # LUTANDO: qualquer entrada na battle list segura o trajeto, nao so a
+            # que conta como atacavel - bicho ainda nao aprendido, ou com o sprite
+            # escurecido por estar quase morto, tambem e bicho vivo do lado do
+            # personagem. A excecao e a lista que ja provou nao responder ao ataque
+            # (NPC, player): essa nao morre nunca e travaria o cave.
+            so_inuteis = lista_inutil == assinatura
+            lutando = ((entradas > 0 and not so_inuteis)
+                       or bool(alvo) or not pode_trocar)
+
+            # 4) kite: e comportamento de COMBATE, nao de rota - roda mesmo com o
+            # andar desligado. Ficava dentro do bloco da rota e nao acontecia nada
+            # para quem so quer o bot lutando.
+            if lutando and ATTACK_MODE == "kite":
+                # bicho na lista mas fora da tela: a tela alcanca 7 SQM de lado e 5
+                # de altura, e o que corre alem disso o bot nao ve. Sem este aviso
+                # nao ha como saber, num log, se ele "nao perseguiu" por isso ou por
+                # decisao errada.
+                if entradas > 0 and not detect_creatures(leitura):
+                    sem_ver = estado_kite.get("sem_ver", 0) + 1
+                    estado_kite["sem_ver"] = sem_ver
+                    if sem_ver == KITE_AVISA_SEM_VER:
+                        print(f"[kite] {entradas} na battle list e nenhum bicho na "
+                              f"tela: correu para fora do alcance da tela "
+                              f"(7 SQM de lado, 5 de altura)")
+                else:
+                    estado_kite["sem_ver"] = 0
+                if odo_kite is None:
+                    odo_kite = Odometro(leitura)
+                odo_kite.atualiza()
+                if odo_kite.mudou_de_andar():
+                    aprendido = aprende_o_que_derrubou(estado_kite, evitar_lugares)
+                    print("[kite] O MINIMAPA TROCOU POR INTEIRO: mudei de andar "
+                          "(escada, buraco ou portal)."
+                          + (f" Guardei o quadrado como '{aprendido}': nao piso "
+                             f"nele de novo." if aprendido else ""))
+                    if PARAR_SE_MUDAR_ANDAR:
+                        print("      Parando o bot - dai em diante quem decide "
+                              "e voce.")
+                        break
+                    odo_kite = None            # o andar novo tem outra textura
+                kite(leitura, teclado, kite_cd, evitar_lugares,
+                     odo=odo_kite, estado=estado_kite)
+
+            # 5) segue o cave. A posicao e integrada SEMPRE, inclusive durante a
+            # briga: e isso que faz o reclique depois da luta cair no lugar certo.
+            if ENABLE_WALK:
+                odo.atualiza()
+                # LUTANDO NAO SE ANDA, e a razao nao e so nao puxar monstro: no
+                # cliente, tecla de direcao ou clique no mapa durante o ataque troca
+                # o modo de luta de "chase" para "stand".
+                if USE_MAP_MARKS:
+                    # acompanha as marcas SEMPRE, inclusive lutando: se o rastreio
+                    # para durante a briga, ao voltar o bot nao sabe mais de onde
+                    # veio e a regra de ouro manda ele para tras. Lutando, porem, o
+                    # que o bicho empurra nao conta como visita.
+                    track_marks(leitura, caminho, andando=not lutando,
+                                odo=odo)
+                # O trajeto so volta depois de a lista ficar limpa por VARIAS
+                # leituras seguidas. Uma leitura ruim no meio da briga nao pode
+                # virar clique no mapa: no cliente, clique no mapa durante o ataque
+                # troca o modo de luta de "chase" para "stand". Perder meio segundo
+                # aqui e barato; trocar o modo do personagem, nao.
+                limpo = 0 if lutando else limpo + 1
+                if not lutando and limpo >= WALK_RESUME_READS:
+                    if parou_por_bicho:
+                        print(f"[walk] battle list limpa por {limpo} leituras, "
+                              f"retomando o trajeto")
+                        parou_por_bicho = False
+                        caminho["cliques"] = 0
+                    if rota_gravada:
+                        follow_route(leitura, odo, caminho, click_cd)
+                    elif USE_MAP_MARKS:
+                        follow_marks(leitura, odo, caminho, click_cd)
+                    else:
+                        follow_waypoints(leitura, odo, caminho, click_cd,
+                                         teclado, key_cd)
+                # o cancelamento do trajeto ja aconteceu la em cima, antes do
+                # ataque: a tecla de parada solta o alvo junto e nao pode vir depois
+
+            time.sleep(LOOP_DELAY)
+        except Exception as erro:
+            seguidos += 1
+            print(f'[erro] {type(erro).__name__}: {erro} (leitura {seguidos} de {ERROS_SEGUIDOS_MAX})')
+            traceback.print_exc()
+            if seguidos >= ERROS_SEGUIDOS_MAX:
+                print('[stop] erros seguidos demais; parando para nao ficar chutando.')
+                break
+            time.sleep(LOOP_DELAY)
 
 
 if __name__ == "__main__":

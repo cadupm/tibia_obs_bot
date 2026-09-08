@@ -680,6 +680,10 @@ class Painel:
         slots = self.coletar_autocast()
         if slots:
             main.AUTOCAST = slots
+        # as teclas de andar sao montadas a partir da configuracao: sem refazer
+        # aqui, mudar as diagonais no painel deixava o bot decidindo por uma
+        # tecla nova e consultando a tabela velha - KeyError no meio da cacada
+        main.atualiza_passos()
         for aviso in self.avisos():
             self.escreve_log("[aviso] " + aviso)
 

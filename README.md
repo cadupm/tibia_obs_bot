@@ -165,6 +165,16 @@ O minimapa do Tibia não distingue piso que muda de andar, então identificaçã
 
 O que existe são duas formas de aprender:
 
+**Comparar quadrado é por correlação, não por diferença de pixel.** Medido nos
+98 quadrados da captura da caverna: com a folga de 22 que estava em uso, **35%
+dos pares de quadrados diferentes** passavam por iguais — um único lugar
+aprendido bloqueava 7 dos 8 lados e o bot ficava paralisado ao lado do bicho
+(`7 lado(s) fora (0 por parede)` no log). Baixar a folga não resolve: o chão muda
+de brilho com a luz. Por correlação, quadrados diferentes ficam em 0,04 de
+mediana e o mesmo quadrado escurecido até 50% dá 1,000 — acima de 0,95 só 0,06%
+dos pares casam por acidente. Depois da troca: **1 de 98** quadrados casa com o
+aprendido, e ele continua reconhecido escurecido.
+
 **Aprender caindo, uma vez** — quando o alarme detecta a mudança de andar, o bot
 guarda o retrato do quadrado que ele acabou de pisar em `evitar.json` e não pisa
 mais nele. Cai uma vez em cada escada, nunca duas.
@@ -331,6 +341,8 @@ python testes/testa_kite_distancia.py # recua, persegue, e não pisa na escada
 python testes/testa_kite_parede.py    # desiste do lado que não anda e acha outro
 python testes/testa_kite_perseguicao.py  # clique de longe, seta de perto
 python testes/testa_andar.py          # percebe a queda, aprende o quadrado, não repete
+python testes/testa_teclas_config.py  # trocar as teclas das diagonais não derruba
+python testes/testa_erro_no_laco.py   # erro isolado não mata a caçada
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
 ```
 
@@ -340,6 +352,14 @@ verdade.
 `testa_bars.py` e `testa_moribundo.py` precisam de amostras `.npy` que não vão.
 `png.py` ali do lado é um leitor de PNG em numpy — o projeto não usa Pillow, e o
 mss escreve PNG mas não lê.
+
+## Uma leitura ruim não mata a caçada
+
+Um `KeyError` numa leitura derrubou o bot no meio de uma cave — e o personagem
+fica lá, parado, sendo comido. Agora cada volta do laço é protegida: erro
+isolado entra no log com o traceback e a volta seguinte tenta de novo; depois de
+`ERROS_SEGUIDOS_MAX` erros em sequência ele para, porque aí algo mudou de
+verdade (janela fechada, layout diferente) e insistir é chutar.
 
 ## Problemas conhecidos
 
