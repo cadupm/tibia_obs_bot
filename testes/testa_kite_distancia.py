@@ -88,5 +88,39 @@ print(f"  escada desenhada embaixo -> passos proibidos: {sorted(proibidos)}")
 if (0, 1) not in proibidos:
     falhas.append("nao proibiu o passo para baixo, onde esta a escada")
 
+# ------------------------- 4) preferir o chao por onde ele JA ANDOU
+# Aquele chao esta provado: nao tem parede, porque o personagem passou por ele,
+# e nao tem escada, porque ele nao mudou de andar ali. Vale como desempate,
+# nunca acima da distancia do bicho.
+print("\nchao ja pisado como desempate:")
+AQUI = (0, 0)
+px_sqm = main.MINIMAP_PX_SQM
+esquerda, direita = (-px_sqm, 0), (px_sqm, 0)
+
+# Precisa ser um EMPATE de verdade para o rastro entrar: com bicho em cima e
+# escada embaixo, esquerda e direita resolvem exatamente igual (o bicho fica a 1
+# de qualquer jeito, e em linha reta a mesma coisa). So ai o rastro decide.
+bicho, escada_embaixo = [(0, -1)], {(0, 1)}
+print("  bicho em cima, escada embaixo:")
+print(f"    sem rastro                       -> "
+      f"{main.passo_de_kite(bicho, proibidos=escada_embaixo)}")
+com_esq = main.passo_de_kite(bicho, proibidos=escada_embaixo,
+                             pisado={esquerda}, aqui=AQUI)
+com_dir = main.passo_de_kite(bicho, proibidos=escada_embaixo,
+                             pisado={direita}, aqui=AQUI)
+print(f"    com rastro a esquerda            -> {com_esq}")
+print(f"    com rastro a direita             -> {com_dir}")
+if com_esq != "left":
+    falhas.append(f"ignorou o rastro a esquerda (saiu {com_esq})")
+if com_dir != "right":
+    falhas.append(f"ignorou o rastro a direita (saiu {com_dir})")
+
+# o rastro NAO pode ganhar da distancia: com bicho colado a esquerda, seguir o
+# rastro de la seria andar para cima dele
+perigo = main.passo_de_kite([(-1, 0)], pisado={esquerda}, aqui=AQUI)
+print(f"  bicho colado a esquerda, rastro la -> {perigo}")
+if perigo is not None and main.KITE_PASSOS[perigo] == (-1, 0):
+    falhas.append("seguiu o rastro para cima do bicho")
+
 print("\nVEREDITO:", "OK - dois lados e sem pisar onde nao deve" if not falhas
       else "FALHOU: " + "; ".join(falhas))

@@ -222,6 +222,8 @@ WALK_TIMEOUT = 15.0             # s no maximo por trecho
 ATTACK_MODE = "stand"
 KITE_DIST = 3                   # SQM que se quer manter de qualquer bicho
 KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
+KITE_PISADO_MAX = 400           # quadrados guardados de chao ja andado (200 SQM
+                                # de rastro; passando disso, esquece e recomeca)
 KITE_AVISA_SEM_VER = 6          # leituras com bicho na lista e nada na tela
                                 # antes de avisar no log
 KITE_CLIQUE_ESPERA = 1.5        # s: se o personagem nao parou nesse tempo, o
@@ -2572,30 +2574,58 @@ def detect_creatures(leitura, img=None):
     if img is None:
         cx, cy, _, _ = client_rect(leitura)
         img = grab((cx + vx, cy + vy, vw, vh))
-    img = img.astype(np.int16)
-    preto = img.max(axis=2) < CREATURE_BORDER_MAX
-    sat = img.max(axis=2) - img.min(axis=2)
-    colorido = sat > 40
 
+    # Cada leitura destas acontece a todo passo do kite, e o tempo aqui e atraso
+    # de reacao: meio passo atras de um bicho que corre e nunca alcancar. Por
+    # isso as contas sao medidas, nao escritas do jeito mais obvio:
+    #   img.max(axis=2)      9.0 ms   (reducao no eixo errado)
+    #   np.maximum(r, g, b)  0.6 ms   <- 15x mais rapido
+    claro = np.maximum(np.maximum(img[:, :, 0], img[:, :, 1]), img[:, :, 2])
+    escuro = np.minimum(np.minimum(img[:, :, 0], img[:, :, 1]), img[:, :, 2])
+    preto = claro < CREATURE_BORDER_MAX
+    colorido = (claro.astype(np.int16) - escuro) > 40
+
+    # PRE-FILTRO. Numa caverna 36% dos pixels sao preto puro, entao procurar so
+    # "fileira de preto" da 212 mil candidatos e nao filtra nada. O que e raro e
+    # COR: 2% dos pixels. Exigindo fileira de preto em cima, outra igual
+    # CREATURE_BAR_TALL-1 linhas abaixo, e cor no meio das duas, sobram 16
+    # candidatos - e so esses passam pela conferencia detalhada.
     alt, larg = preto.shape
+    minimo = CREATURE_BAR_W[0]
+    base = CREATURE_BAR_TALL - 1
+
+    def janela(mascara):
+        """Para cada pixel, quantos da mascara ha em [x, x+minimo)."""
+        soma = np.cumsum(mascara, axis=1)
+        jan = np.zeros_like(soma)
+        jan[:, 0] = soma[:, minimo - 1]
+        jan[:, 1:larg - minimo + 1] = soma[:, minimo:] - soma[:, :-minimo]
+        return jan
+
+    comeca = janela(preto) == minimo
+    tem_cor = janela(colorido) > 0
+    candidatos = (comeca[:alt - base] & comeca[base:]
+                  & (tem_cor[1:alt - base + 1] | tem_cor[2:alt - base + 2]))
+
     achadas = []
-    for y in range(alt - CREATURE_BAR_TALL):
-        for ini_x, fim_x in _runs(preto[y]):
-            comprimento = fim_x - ini_x + 1
-            if not (CREATURE_BAR_W[0] <= comprimento <= CREATURE_BAR_W[1]):
-                continue
-            # a borda de baixo, do mesmo tamanho e no mesmo lugar
-            base = y + CREATURE_BAR_TALL - 1
-            if not preto[base, ini_x:fim_x + 1].all():
-                continue
-            # as pontas das duas linhas de dentro tambem sao preto
-            dentro = slice(y + 1, base)
-            if not (preto[dentro, ini_x].all() and preto[dentro, fim_x].all()):
-                continue
-            # e ha preenchimento colorido dentro: sem isso e so um risco preto
-            if not colorido[dentro, ini_x + 1:fim_x].any():
-                continue
-            achadas.append((ini_x, fim_x, y))
+    for y, ini_x in zip(*np.nonzero(candidatos)):
+        y, ini_x = int(y), int(ini_x)
+        if ini_x > 0 and preto[y, ini_x - 1]:
+            continue                             # nao e o comeco da fileira
+        fim_x = ini_x
+        while fim_x + 1 < larg and preto[y, fim_x + 1]:
+            fim_x += 1
+        if not (CREATURE_BAR_W[0] <= fim_x - ini_x + 1 <= CREATURE_BAR_W[1]):
+            continue
+        fundo = y + base
+        if not preto[fundo, ini_x:fim_x + 1].all():
+            continue
+        dentro = slice(y + 1, fundo)
+        if not (preto[dentro, ini_x].all() and preto[dentro, fim_x].all()):
+            continue
+        if not colorido[dentro, ini_x + 1:fim_x].any():
+            continue
+        achadas.append((ini_x, fim_x, y))
 
     # a mesma barra aparece na varredura de cada linha da borda de cima; junta
     barras = []
@@ -2624,7 +2654,8 @@ def longe_o_bastante(criaturas, distancia=None):
     return min(max(abs(dx), abs(dy)) for dx, dy in criaturas)
 
 
-def passo_de_kite(criaturas, distancia=None, proibidos=()):
+def passo_de_kite(criaturas, distancia=None, proibidos=(), pisado=(),
+                  aqui=None):
     """
     Para que lado andar para ficar EXATAMENTE a `distancia` do bicho mais perto,
     ou None se ja esta bom (ou se andar so piora).
@@ -2637,6 +2668,12 @@ def passo_de_kite(criaturas, distancia=None, proibidos=()):
 
     `proibidos` sao passos que nao se pode dar - escada, buraco, portal. Andar
     para um deles nao troca de posicao: troca de andar.
+
+    `pisado` sao os quadrados por onde o personagem JA ANDOU, e `aqui` e onde
+    ele esta (nas duas coisas, em px de minimapa). Empatando o resto, prefere-se
+    voltar por onde se veio: aquele chao esta provado - nao tem parede, porque o
+    personagem passou por ele, e nao tem escada, porque ele nao mudou de andar
+    ali. E de graca: nao depende de reconhecer nada na tela.
     """
     distancia = KITE_DIST if distancia is None else distancia
     if not criaturas:
@@ -2668,12 +2705,29 @@ def passo_de_kite(criaturas, distancia=None, proibidos=()):
 
     passos = KITE_PASSOS if KITE_DIAGONAIS else {
         t: p for t, p in KITE_PASSOS.items() if 0 in p}
-    melhor, melhor_nota = None, nota_de(criaturas)
+    def conhecido(px, py):
+        """O destino deste passo e chao por onde o personagem ja andou?"""
+        if aqui is None or not pisado:
+            return 0
+        destino = (aqui[0] + px * MINIMAP_PX_SQM,
+                   aqui[1] + py * MINIMAP_PX_SQM)
+        return 1 if destino in pisado else 0
+
+    # a nota da posicao ATUAL tem de ter os mesmos campos, na mesma ordem, que
+    # a dos candidatos - senao a comparacao mistura "chao pisado" com "linha
+    # reta" e a escolha sai errada (foi o que aconteceu: com escada de um lado,
+    # ele voltou a ficar plantado)
+    de_agora = nota_de(criaturas)
+    melhor, melhor_nota = None, (de_agora[0], de_agora[1], 0, de_agora[2])
     for tecla, (px, py) in passos.items():
         if (px, py) in criaturas or (px, py) in proibidos:
             continue                     # quadrado ocupado, ou lugar de nao pisar
         depois = [(dx - px, dy - py) for dx, dy in criaturas]
+        # o chao ja pisado entra ANTES do desempate fino: entre dois lados que
+        # resolvem igual o problema do bicho, vale o que se sabe que da para
+        # andar e nao muda de andar
         nota = nota_de(depois)
+        nota = (nota[0], nota[1], conhecido(px, py), nota[2])
         if nota > melhor_nota:
             melhor, melhor_nota = tecla, nota
     return melhor
@@ -2785,7 +2839,21 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
                       f"para chegar a {KITE_DIST} dele")
                 return True
 
-    tecla = passo_de_kite(criaturas, proibidos=proibidos)
+    # o chao por onde ele andou: prova de que da para andar e que nao muda de
+    # andar. Guardado por quadrado, em px de minimapa.
+    pisado = estado.setdefault("pisado", set())
+    aqui = None
+    if odo is not None:
+        passo_px = MINIMAP_PX_SQM
+        aqui = (int(round(odo.pos[0] / passo_px)) * passo_px,
+                int(round(odo.pos[1] / passo_px)) * passo_px)
+        pisado.add(aqui)
+        if len(pisado) > KITE_PISADO_MAX:
+            pisado.clear()               # cave inteira na memoria nao ajuda
+            pisado.add(aqui)
+
+    tecla = passo_de_kite(criaturas, proibidos=proibidos,
+                          pisado=pisado, aqui=aqui)
     if tecla is None:
         if perto is not None and perto != KITE_DIST:
             print(f"[kite] sem lado bom: o bicho mais perto esta a {perto} SQM"

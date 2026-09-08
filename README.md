@@ -114,6 +114,23 @@ Limite medido: o viewport tem 15×11 quadrados, então a tela alcança **7 SQM n
 horizontal e 5 na vertical**. Bicho que corre além disso não aparece — não há o
 que perseguir. Nesse caso o log avisa: `N na battle list e nenhum bicho na tela`.
 
+### O tempo de reação importa
+
+Cada leitura do kite acontece a todo passo, e o tempo ali é atraso de reação —
+meio passo atrás de um bicho que corre é nunca alcançar. Por isso as contas da
+detecção são medidas, não escritas do jeito mais óbvio:
+
+| conta | jeito óbvio | medido | como ficou |
+| --- | --- | --- | --- |
+| máximo dos canais | `img.max(axis=2)` | **9,0 ms** | `np.maximum(np.maximum(r,g),b)` → **0,6 ms** |
+| achar as molduras | varrer 748 linhas em Python | **61 ms** | pré-filtro em numpy → **14 ms** |
+
+O pré-filtro precisou de cuidado: numa caverna **36% dos pixels são preto puro**,
+então procurar só "fileira de preto" dá 212 mil candidatos e não filtra nada. O
+que é raro é **cor** — 2% dos pixels. Exigindo fileira de preto em cima, outra
+igual três linhas abaixo, e cor no meio das duas, sobram **16** candidatos, e só
+esses passam pela conferência detalhada.
+
 ### Parede
 
 O kite esbarrava na pedra e ficava martelando a mesma tecla: nada na tela mudava
@@ -163,6 +180,12 @@ que não mexe no personagem). Cada quadrado é recortado, reduzido a uma
 assinatura de um pixel a cada 4 e guardado em `evitar.json`; no kite, o bot
 deixa de andar para qualquer lado cujo quadrado de destino se pareça com um
 deles. Não sobrando lado nenhum, ele fica parado — melhor que cair.
+
+**Chão já pisado** — empatando o resto, o bot prefere o lado por onde o
+personagem **já andou**. Aquele chão está provado: não tem parede, porque ele
+passou por ali, e não tem escada, porque ele não mudou de andar ali. É de graça,
+não depende de reconhecer nada na tela, e serve às duas coisas de uma vez. Vale
+só como desempate — nunca acima da distância do bicho.
 
 **Alarme** — se mesmo assim mudar de andar, o bot **para**. Andando pelo mesmo
 andar o minimapa apenas rola, e o que sobra de diferença depois de alinhar é

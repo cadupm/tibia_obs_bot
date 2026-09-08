@@ -70,5 +70,6 @@
     }
   ],
   "KITE_CLIQUE": 2,
-  "KITE_CLIQUE_ESPERA": 1.5
+  "KITE_CLIQUE_ESPERA": 1.5,
+  "KITE_PISADO_MAX": 400
 }
