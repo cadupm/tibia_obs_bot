@@ -70,6 +70,9 @@ viewport e é descartada. As **diagonais** (teclado numérico) não são enfeite
 com um bicho à esquerda e outro em cima, nenhum dos quatro lados retos aumenta a
 distância do mais perto — só a diagonal aumenta.
 
+O kite é comportamento de **combate**, não de rota: funciona com `ENABLE_WALK`
+desligado, para quem liga o bot só para lutar.
+
 Antes de confiar no kite, confira a geometria no seu layout:
 
 ```
@@ -175,6 +178,7 @@ python testes/testa_rota_ordem.py      # rota gravada: segue a ordem, começando
 python testes/testa_trava_alvo.py      # não troca de alvo até o bicho sumir da lista
 python testes/testa_ordem_parada.py   # para antes de atacar; não clica no mapa lutando
 python testes/testa_kite.py           # acha as criaturas na tela e sabe para onde fugir
+python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
 ```
 
 `testa_kite.py` usa `tela_cave.png`, uma captura de dentro da cave que vai no

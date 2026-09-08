@@ -12,11 +12,14 @@
   "MANA_THRESHOLD": 140.0,
   "MANA_COOLDOWN": 1.2,
   "ENABLE_ATTACK": true,
+  "ATTACK_MODE": "kite",
   "ATTACK_HOTKEY": "space",
   "ATTACK_COOLDOWN": 0.6,
   "ATTACK_CONFIRM": 4,
   "TARGET_LOST_MAX": 4.0,
   "TARGET_GONE_READS": 3,
+  "KITE_DIST": 3,
+  "KITE_COOLDOWN": 0.35,
   "ENABLE_SPELL": true,
   "SPELL_HOTKEY": "f1",
   "SPELL_COOLDOWN": 2.0,
@@ -24,7 +27,7 @@
   "SPELL_DELAY_AFTER_ATTACK": 0.5,
   "ONLY_KNOWN_MONSTERS": true,
   "AUTO_LEARN": false,
-  "ENABLE_WALK": true,
+  "ENABLE_WALK": false,
   "MARK_COLOR": "azul",
   "MARK_ARRIVE": 3,
   "STOP_WALK_KEY": "esc",
@@ -34,7 +37,7 @@
   "WALK_MAX_CLICKS": 4,
   "MINIMAP_PX_SQM": 2.0,
   "WAYPOINTS_FILE": "rotas/padrao.json",
-  "USE_ROUTE_ORDER": true,
+  "USE_ROUTE_ORDER": false,
   "ENABLE_AUTOCAST": true,
   "AUTOCAST_MANA_FLOOR": 18.0,
   "OBS_MODE": true,
@@ -62,8 +65,5 @@
       "tecla": "f10",
       "intervalo": 300.0
     }
-  ],
-  "ATTACK_MODE": "stand",
-  "KITE_DIST": 3,
-  "KITE_COOLDOWN": 0.35
+  ]
 }

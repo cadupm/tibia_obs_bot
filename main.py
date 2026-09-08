@@ -3089,23 +3089,28 @@ def run_bot():
                       f"{ATTACK_HOTKEY} ate a lista mudar.")
         cast_spell(alvo, mana, spell_cd, espera_magia)
 
-        # 4) segue o cave. A posicao e integrada SEMPRE, inclusive durante a
+        # LUTANDO: qualquer entrada na battle list segura o trajeto, nao so a
+        # que conta como atacavel - bicho ainda nao aprendido, ou com o sprite
+        # escurecido por estar quase morto, tambem e bicho vivo do lado do
+        # personagem. A excecao e a lista que ja provou nao responder ao ataque
+        # (NPC, player): essa nao morre nunca e travaria o cave.
+        so_inuteis = lista_inutil == assinatura
+        lutando = ((entradas > 0 and not so_inuteis)
+                   or bool(alvo) or not pode_trocar)
+
+        # 4) kite: e comportamento de COMBATE, nao de rota - roda mesmo com o
+        # andar desligado. Ficava dentro do bloco da rota e nao acontecia nada
+        # para quem so quer o bot lutando.
+        if lutando and ATTACK_MODE == "kite":
+            kite(leitura, teclado, kite_cd)
+
+        # 5) segue o cave. A posicao e integrada SEMPRE, inclusive durante a
         # briga: e isso que faz o reclique depois da luta cair no lugar certo.
         if ENABLE_WALK:
             odo.atualiza()
             # LUTANDO NAO SE ANDA, e a razao nao e so nao puxar monstro: no
             # cliente, tecla de direcao ou clique no mapa durante o ataque troca
-            # o modo de luta de "chase" para "stand". Por isso o trajeto tambem
-            # fica preso enquanto a trava acha que o bicho esta vivo - se a
-            # entrada dele falhar numa leitura, o bot nao pode sair clicando.
-            # QUALQUER entrada na lista segura o clique, nao so a que conta
-            # como atacavel: bicho ainda nao aprendido, ou com o sprite
-            # escurecido por estar quase morto, tambem e bicho vivo do lado do
-            # personagem. A excecao e a lista que ja provou nao responder ao
-            # ataque (NPC, player): essa nao morre nunca e travaria o cave.
-            so_inuteis = lista_inutil == assinatura
-            lutando = ((entradas > 0 and not so_inuteis)
-                       or bool(alvo) or not pode_trocar)
+            # o modo de luta de "chase" para "stand".
             if USE_MAP_MARKS:
                 # acompanha as marcas SEMPRE, inclusive lutando: se o rastreio
                 # para durante a briga, ao voltar o bot nao sabe mais de onde
@@ -3113,9 +3118,6 @@ def run_bot():
                 # que o bicho empurra nao conta como visita.
                 track_marks(leitura, caminho, andando=not lutando,
                             odo=odo)
-            if lutando and ATTACK_MODE == "kite":
-                kite(leitura, teclado, kite_cd)
-
             # O trajeto so volta depois de a lista ficar limpa por VARIAS
             # leituras seguidas. Uma leitura ruim no meio da briga nao pode
             # virar clique no mapa: no cliente, clique no mapa durante o ataque
