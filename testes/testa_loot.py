@@ -49,6 +49,11 @@ def clica(_win, passo):
 
 
 main.click_minimap = clica
+main.client_rect = lambda win: (0, 0, 1920, 1009)
+# a tecla de saque age sobre o que esta DEBAIXO DO CURSOR: o teste registra
+# para onde o bot mirou e confere que foi no quadrado do corpo
+mirado = []
+main.mira_mouse = lambda x, y: mirado.append((x, y))
 main.focus_window = lambda win: True
 main.pyautogui = type("P", (), {
     "press": staticmethod(lambda t: acoes.append(("tecla", t)))})()
@@ -133,6 +138,32 @@ print(f"com ENABLE_LOOT desligado: guardou corpo? "
 if estado.get("loot_onde") is not None or acoes:
     falhas.append("desligado e mesmo assim mexeu")
 main.ENABLE_LOOT = True
+
+# ---------------------------- 6) mirar o cursor no corpo antes de apertar
+# A tecla de saque rapido age sobre o que esta DEBAIXO DO CURSOR: sem mirar, ela
+# sai com o mouse onde quer que ele tenha ficado - em geral sobre o minimapa, do
+# ultimo clique de rota - e nao pega nada.
+odo.pos = [0, 0]
+estado = {}
+main.marca_o_corpo(estado, (1, 0), odo)
+mirado.clear()
+main.loot(Janela(), Janela(), estado, SemEspera(), odo)
+esperado = main.ponto_do_quadrado(Janela(), (1, 0))
+print(f"\nmirou em {mirado[:1]}, quadrado do corpo em {esperado}")
+if not mirado:
+    falhas.append("apertou a tecla sem mirar o cursor no corpo")
+elif mirado[0] != esperado:
+    falhas.append(f"mirou em {mirado[0]}, o corpo esta em {esperado}")
+
+# ------------- 7) o corpo nao envelhece: desconta o caminho andado ate a morte
+estado = {}
+odo.pos = [6, 0]                       # andou 3 SQM desde que viu o bicho
+main.marca_o_corpo(estado, (4, 0), odo, visto_em=(0, 0))
+print(f"viu o bicho a 4 SQM e andou 3 na direcao dele -> corpo em "
+      f"{estado['loot_onde']}")
+if abs(estado["loot_onde"][0] - 1) > 0.1:
+    falhas.append(f"nao descontou o caminho andado: {estado['loot_onde']} "
+                  f"(esperava perto de (1, 0))")
 
 print("\nVEREDITO:", "OK - vai ate o corpo, saqueia e volta para a rota"
       if not falhas else "FALHOU: " + "; ".join(falhas))

@@ -65,6 +65,17 @@ guardada enquanto ele está vivo, e no momento da morte vira o destino. Em
 `KITE_DIST` de distância e precisa andar até lá. O offset do corpo acompanha o
 personagem pelo odômetro — o corpo não anda, quem anda é ele.
 
+**A tecla age sobre o que está debaixo do cursor**, então o bot mira o mouse no
+quadrado do corpo antes de apertar. Sem isso ela saía com o mouse onde quer que
+ele tivesse ficado — em geral sobre o minimapa, do último clique de rota — e não
+pegava nada.
+
+**A posição do corpo desconta o caminho andado.** A morte só é confirmada
+`TARGET_GONE_READS` leituras depois de a entrada sumir da battle list, e até lá
+o personagem andou (kitando, principalmente). O bot guarda *onde ele estava* na
+hora em que viu o bicho e desconta esse trajeto — senão vai buscar o corpo onde
+o corpo estaria se ele não tivesse se mexido.
+
 O loot roda **antes** da rota e dentro da mesma carência dela: sair andando com
 o corpo no chão é deixar o profit para trás, e o loot também anda de clique no
 mapa — clique no meio da briga trocaria *chase* por *stand*. Não chegando no

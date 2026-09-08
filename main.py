@@ -249,6 +249,7 @@ LOOT_HOTKEY = "-"               # a tecla de saque rapido, no cliente
 LOOT_DIST = 1                   # SQM: daqui o saque alcanca o corpo
 LOOT_TENTATIVAS = 3             # apertadas por corpo (saque leva um por vez)
 LOOT_COOLDOWN = 0.45            # s entre apertadas
+LOOT_MIRA_PAUSA = 0.08          # s entre mirar o cursor e apertar a tecla
 LOOT_PRAZO = 8.0                # s tentando chegar no corpo antes de desistir:
                                 # corpo em cima de escada, ou bicho novo no
                                 # caminho, e loot que nao vale a cacada
@@ -1291,6 +1292,32 @@ class Odometro:
 
     def falta(self, alvo):
         return alvo[0] - self.pos[0], alvo[1] - self.pos[1]
+
+
+def mira_mouse(x, y):
+    """
+    Poe o cursor num ponto da tela, sem clicar.
+
+    A tecla de saque rapido do cliente age sobre o que esta DEBAIXO DO CURSOR.
+    Sem mirar antes, ela era apertada com o mouse onde quer que ele tivesse
+    ficado - em geral sobre o minimapa, do ultimo clique de rota - e nao pegava
+    nada. Mesmo caminho do click_game, sem os botoes.
+    """
+    largura = user32.GetSystemMetrics(0)
+    altura = user32.GetSystemMetrics(1)
+    user32.mouse_event(MOUSEEVENTF_MOVE_ABS,
+                       int(x * 65535 / max(largura - 1, 1)),
+                       int(y * 65535 / max(altura - 1, 1)), 0, 0)
+
+
+def ponto_do_quadrado(leitura, offset):
+    """Centro, na tela, do quadrado que esta a `offset` SQM do personagem."""
+    cx, cy, _, _ = client_rect(leitura)
+    vx, vy, vw, vh = GAME_VIEW
+    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+    x = cx + vx + int((meio_col + offset[0] + 0.5) * TILE_PX)
+    y = cy + vy + int((meio_lin + offset[1] + 0.5) * TILE_PX)
+    return x, y
 
 
 def click_minimap(win, passo):
@@ -3341,6 +3368,12 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
         return True
     if not teclado.isActive:
         focus_window(teclado)
+    # MIRAR ANTES DE APERTAR: a tecla de saque rapido age sobre o que esta
+    # debaixo do cursor. Sem isso ela saia com o mouse sobre o minimapa, do
+    # ultimo clique de rota, e nao pegava nada.
+    mira_mouse(*ponto_do_quadrado(leitura, (int(round(onde[0])),
+                                            int(round(onde[1])))))
+    time.sleep(LOOT_MIRA_PAUSA)
     pyautogui.press(LOOT_HOTKEY)
     loot_cd.mark()
     tentativas = estado.get("loot_tentativas", 0) + 1
@@ -3355,10 +3388,25 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     return True
 
 
-def marca_o_corpo(estado, onde, odo=None):
-    """Guarda onde o bicho morreu, para o loot ir buscar."""
+def marca_o_corpo(estado, onde, odo=None, visto_em=None):
+    """
+    Guarda onde o bicho morreu, para o loot ir buscar.
+
+    `onde` e o offset em SQM na epoca em que o bicho foi VISTO, e `visto_em` e
+    onde o personagem estava naquela hora. A morte so e confirmada algumas
+    leituras depois, e ate la ele andou - sem descontar esse caminho, o bot vai
+    buscar o corpo no lugar onde o corpo estaria se ele nao tivesse se mexido.
+    """
     if not ENABLE_LOOT or onde is None:
         return
+    onde = (float(onde[0]), float(onde[1]))
+    if visto_em is not None and odo is not None:
+        andou = (odo.pos[0] - visto_em[0], odo.pos[1] - visto_em[1])
+        if abs(andou[0]) + abs(andou[1]):
+            onde = (onde[0] - andou[0] / MINIMAP_PX_SQM,
+                    onde[1] - andou[1] / MINIMAP_PX_SQM)
+            print(f"[loot] o personagem andou {andou} desde que viu o bicho; "
+                  f"o corpo esta em {onde[0]:.0f},{onde[1]:.0f}")
     estado["loot_onde"] = (float(onde[0]), float(onde[1]))
     estado["loot_desde"] = time.time()
     estado["loot_tentativas"] = 0
@@ -3841,14 +3889,30 @@ def run_bot():
             # ONDE O BICHO ESTA, enquanto vivo: o corpo nao tem barra de vida,
             # entao depois de morto nao ha como enxerga-lo. Guardar a posicao do
             # mais perto a cada leitura e o que permite ir buscar o loot depois.
+            odo_agora = odo if odo is not None else odo_kite
             if ENABLE_LOOT and entradas > 0:
                 na_tela = detect_creatures(leitura)
                 if na_tela:
-                    caminho["bicho_visto"] = min(
-                        na_tela, key=lambda c: max(abs(c[0]), abs(c[1])))
+                    perto = min(na_tela,
+                                key=lambda c: max(abs(c[0]), abs(c[1])))
+                    # guarda ONDE o personagem estava junto com o que ele viu:
+                    # a morte so e confirmada TARGET_GONE_READS leituras depois
+                    # de a entrada sumir, e nesse meio-tempo ele andou. Sem
+                    # anotar a posicao da epoca, o offset envelhece e o bot vai
+                    # buscar o corpo no lugar errado.
+                    historico = caminho.setdefault("bichos_vistos", [])
+                    historico.append(
+                        (tuple(odo_agora.pos) if odo_agora else (0, 0), perto))
+                    del historico[:-(TARGET_GONE_READS + 2)]
             if ENABLE_LOOT and trava.morreu:
                 trava.morreu = False
-                marca_o_corpo(caminho, caminho.get("bicho_visto"), odo)
+                historico = caminho.get("bichos_vistos") or []
+                if historico:
+                    # a leitura mais VELHA da janela: e a que ainda tinha o
+                    # bicho vivo na tela, antes de ele sumir
+                    visto_em, onde = historico[0]
+                    marca_o_corpo(caminho, onde, odo_agora, visto_em=visto_em)
+                caminho["bichos_vistos"] = []
 
             # a lista mudou? volta a valer a pena tentar atacar
             assinatura = battle_assinatura(sprites)
