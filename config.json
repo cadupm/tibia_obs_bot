@@ -1,15 +1,15 @@
 {
-  "HP_MAX": 725,
-  "MANA_MAX": 900,
+  "HP_MAX": 735,
+  "MANA_MAX": 915,
   "ENABLE_HEAL": true,
   "HEAL_HOTKEY": "f2",
-  "HEAL_THRESHOLD": 650.0,
+  "HEAL_THRESHOLD": 680.0,
   "HEAL_COOLDOWN": 1.0,
   "HEAL_STRONG_HOTKEY": "f5",
-  "HEAL_STRONG_THRESHOLD": 590.0,
+  "HEAL_STRONG_THRESHOLD": 620.0,
   "ENABLE_MANA": true,
   "MANA_HOTKEY": "f3",
-  "MANA_THRESHOLD": 140.0,
+  "MANA_THRESHOLD": 200.0,
   "MANA_COOLDOWN": 1.2,
   "ENABLE_ATTACK": true,
   "ATTACK_MODE": "kite",
@@ -20,6 +20,7 @@
   "TARGET_GONE_READS": 3,
   "KITE_DIST": 4,
   "KITE_COOLDOWN": 0.35,
+  "KITE_BLOQUEIO": 3.0,
   "KITE_DIAGONAIS": true,
   "PARAR_SE_MUDAR_ANDAR": true,
   "ENABLE_SPELL": true,
@@ -68,7 +69,5 @@
       "intervalo": 300.0
     }
   ],
-  "KITE_BLOQUEIO": 3.0,
-  "KITE_FALHAS": 2,
-  "KITE_BLOQUEIO_MAX": 120.0
+  "KITE_CLIQUE": 2
 }

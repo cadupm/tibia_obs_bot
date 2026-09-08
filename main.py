@@ -222,6 +222,10 @@ WALK_TIMEOUT = 15.0             # s no maximo por trecho
 ATTACK_MODE = "stand"
 KITE_DIST = 3                   # SQM que se quer manter de qualquer bicho
 KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
+KITE_CLIQUE = 2                 # SQM alem da distancia pedida a partir dos quais
+                                # se usa clique no mapa em vez de seta: seta e
+                                # um quadrado por vez e esbarra em tudo, clique
+                                # anda o trecho e desvia de parede.
 KITE_FALHAS = 2                 # passos seguidos sem sair do lugar, no mesmo
                                 # lado, para chamar de parede. Um so nao prova:
                                 # o personagem leva 250-400ms para andar e a
@@ -2738,8 +2742,31 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
         parados.append(tecla_bloqueada)
         proibidos.add(KITE_PASSOS[tecla_bloqueada])
 
-    tecla = passo_de_kite(criaturas, proibidos=proibidos)
     perto = longe_o_bastante(criaturas)
+
+    # BICHO QUE CORRE: fechar 6 quadrados de seta sao 6 teclas a KITE_COOLDOWN
+    # cada, e cada seta esbarra sozinha em cada pedra do caminho. Um clique no
+    # mapa anda o trecho inteiro e desvia de parede pelo caminho do proprio
+    # cliente - muito mais rapido para perseguir quem fugiu com pouca vida.
+    #
+    # Isso vale so no modo kite: aqui as setas ja forcam "stand" no cliente,
+    # entao o clique nao troca modo de luta nenhum.
+    if perto is not None and perto >= KITE_DIST + KITE_CLIQUE:
+        alvo = min(criaturas, key=lambda c: max(abs(c[0]), abs(c[1])))
+        reta = (alvo[0] ** 2 + alvo[1] ** 2) ** 0.5
+        if reta > 0:
+            fracao = max(0.0, (reta - KITE_DIST) / reta)
+            passo = (int(round(alvo[0] * fracao * MINIMAP_PX_SQM)),
+                     int(round(alvo[1] * fracao * MINIMAP_PX_SQM)))
+            if abs(passo[0]) + abs(passo[1]) > 0:
+                click_minimap(leitura, passo)
+                kite_cd.mark()
+                estado.pop("ultimo", None)     # clique nao e passo de seta
+                print(f"[kite] bicho a {perto} SQM (correu): clico no mapa "
+                      f"para chegar a {KITE_DIST} dele")
+                return True
+
+    tecla = passo_de_kite(criaturas, proibidos=proibidos)
     if tecla is None:
         if perto is not None and perto != KITE_DIST:
             print(f"[kite] sem lado bom: o bicho mais perto esta a {perto} SQM"
@@ -2752,6 +2779,10 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
     kite_cd.mark()
     estado["ultimo"] = tecla
     estado["pos_antes"] = tuple(odo.pos) if odo is not None else ()
+    # guarda a tela e o lado: caindo de andar, e daqui que sai o retrato do
+    # quadrado que fez cair, para nunca mais pisar nele
+    estado["tela_antes"] = img
+    estado["passo_dado"] = KITE_PASSOS[tecla]
     print(f"[kite] {len(criaturas)} bicho(s), o mais perto a {perto} SQM: "
           f"ando para {tecla}"
           + (f" (evitando {len(proibidos)} lado(s))" if proibidos else ""))
@@ -2839,6 +2870,40 @@ def record_evitar(segundos=120.0):
     else:
         print("[evitar] nada novo ensinado.")
     restore_windows()
+
+
+def aprende_o_que_derrubou(estado, lugares):
+    """
+    Guarda o quadrado que acabou de fazer o personagem mudar de andar.
+
+    O minimapa NAO marca piso que muda de andar - conferido: o vermelho da
+    paleta que eu esperava ser escada e telhado de casa, 111 blocos espalhados
+    acompanhando os predios. Sem esse sinal, nao ha como saber de antemao que um
+    quadrado e escada; o que da e cair nele UMA vez e guardar o retrato, e dai
+    em diante ele fica de fora.
+
+    Devolve o nome dado ao lugar, ou None se nao havia o que guardar.
+    """
+    tela = estado.get("tela_antes")
+    passo = estado.get("passo_dado")
+    if tela is None or passo is None:
+        return None
+    _vx, _vy, vw, vh = GAME_VIEW
+    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+    tile = tile_da_tela(tela, meio_col + passo[0], meio_lin + passo[1])
+    if tile is None:
+        return None
+    if tile_proibido(tile, lugares):
+        return None                        # ja conhecido; caiu de outro jeito
+    nome = f"queda{len(lugares) + 1}"
+    lugares[nome] = assinatura_tile(tile)
+    save_evitar(lugares)
+    arquivo = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           f"evitar_{nome}.png")
+    grande = np.repeat(np.repeat(tile, 3, axis=0), 3, axis=1)
+    mss.tools.to_png(np.ascontiguousarray(grande).tobytes(),
+                     (grande.shape[1], grande.shape[0]), output=arquivo)
+    return nome
 
 
 def show_teclas():
@@ -3478,11 +3543,17 @@ def run_bot():
             if odo_kite is None:
                 odo_kite = Odometro(leitura)
             odo_kite.atualiza()
-            if PARAR_SE_MUDAR_ANDAR and odo_kite.mudou_de_andar():
+            if odo_kite.mudou_de_andar():
+                aprendido = aprende_o_que_derrubou(estado_kite, evitar_lugares)
                 print("[kite] O MINIMAPA TROCOU POR INTEIRO: mudei de andar "
-                      "(escada, buraco ou portal). Parando o bot - dai em "
-                      "diante quem decide e voce.")
-                break
+                      "(escada, buraco ou portal)."
+                      + (f" Guardei o quadrado como '{aprendido}': nao piso "
+                         f"nele de novo." if aprendido else ""))
+                if PARAR_SE_MUDAR_ANDAR:
+                    print("      Parando o bot - dai em diante quem decide "
+                          "e voce.")
+                    break
+                odo_kite = None            # o andar novo tem outra textura
             kite(leitura, teclado, kite_cd, evitar_lugares,
                  odo=odo_kite, estado=estado_kite)
 

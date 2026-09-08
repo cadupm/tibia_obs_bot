@@ -77,6 +77,8 @@ ABAS = [
              "SQM de todo bicho na tela, inclusive o alvo"),
             ("KITE_COOLDOWN", "Intervalo entre passos", float,
              "segundos; a velocidade de andar do personagem"),
+            ("KITE_CLIQUE", "Clicar no mapa a partir de", int,
+             "SQM alem da distancia: seta e lenta para longe"),
             ("KITE_BLOQUEIO", "Evitar lado que nao andou por", float,
              "segundos; e assim que ele desencalha de parede"),
             ("KITE_DIAGONAIS", "Usar diagonais", bool,

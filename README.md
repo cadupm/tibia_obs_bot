@@ -92,6 +92,22 @@ plantado quando o único lado que aumentava a distância estava bloqueado por
 escada. O desempate vale só quando está perto demais: na distância certa ele
 fica parado, senão andaria em círculo por centésimos de diagonal.
 
+### Bicho que corre
+
+Fechar 6 quadrados de seta são 6 teclas a `KITE_COOLDOWN` cada, e cada seta
+esbarra sozinha em cada pedra do caminho — era por isso que ele demorava a ir
+atrás de quem fugia. A partir de `KITE_DIST + KITE_CLIQUE` de distância o bot
+**clica no mapa**: anda o trecho inteiro com o desvio de parede do próprio
+cliente, e o clique é calculado para parar exatamente a `KITE_DIST` do bicho. De
+perto ele volta para a seta, que é o que dá controle fino.
+
+Isso vale só no modo kite: ali as setas já forçam *stand* no cliente, então o
+clique não troca modo de luta nenhum.
+
+Limite medido: o viewport tem 15×11 quadrados, então a tela alcança **7 SQM na
+horizontal e 5 na vertical**. Bicho que corre além disso não aparece — não há o
+que perseguir.
+
 ### Parede
 
 O kite esbarrava na pedra e ficava martelando a mesma tecla: nada na tela mudava
@@ -118,7 +134,19 @@ dois quadrados e gastava 10 dos 24 passos nisso. A regra ficou sendo só o tempo
 Cair de andar fugindo de bicho é queda sem volta automática, e o lugar onde se
 cai pode estar cheio. Duas camadas:
 
-**Prevenção** — você ensina os quadrados em que não se pisa:
+**O minimapa não ajuda aqui, e vale registrar.** Medi a paleta dele: 292 cores,
+das quais o vermelho (254,51,0) parecia marcar escada. Não marca — os 574 pixels
+dessa cor formam 111 blocos espalhados que acompanham os prédios: é **telhado**.
+O minimapa do Tibia não distingue piso que muda de andar, então identificação
+"de graça", sem nunca ter descido, não existe por esse caminho.
+
+O que existe são duas formas de aprender:
+
+**Aprender caindo, uma vez** — quando o alarme detecta a mudança de andar, o bot
+guarda o retrato do quadrado que ele acabou de pisar em `evitar.json` e não pisa
+mais nele. Cai uma vez em cada escada, nunca duas.
+
+**Ensinar sem cair** — você ensina os quadrados em que não se pisa:
 
 ```
 python main.py --evitar
@@ -264,6 +292,8 @@ python testes/testa_ordem_parada.py   # para antes de atacar; não clica no mapa
 python testes/testa_kite.py           # acha as criaturas na tela e sabe para onde fugir
 python testes/testa_kite_distancia.py # recua, persegue, e não pisa na escada
 python testes/testa_kite_parede.py    # desiste do lado que não anda e acha outro
+python testes/testa_kite_perseguicao.py  # clique de longe, seta de perto
+python testes/testa_andar.py          # percebe a queda, aprende o quadrado, não repete
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
 ```
 
