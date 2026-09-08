@@ -47,10 +47,29 @@ serve de freio de mão.
 | aba | o que tem |
 | --- | --- |
 | Healing | vida/mana máximas, cura, cura de emergência, poção de mana |
-| Combate | como lutar (stand/chase/kite), tecla de atacar, combo de magia, lista de monstros |
+| Combate | como lutar (stand/chase/kite), tecla de atacar, loot, combo de magia, lista de monstros |
 | Rota | marcas do mapa, rota gravada, tecla de parar de andar |
 | Autocast | até 4 teclas em intervalo fixo (pá, comida, buff) |
 | Setup | título do projetor, tecla de parada, intervalo do loop |
+
+### Loot
+
+`ENABLE_LOOT`, na aba Combate. Escolhi a **tecla** de saque rápido do cliente
+(`LOOT_HOTKEY`, padrão `-`) e não o clique direito no corpo: a tecla não precisa
+de coordenada nenhuma nem de acertar item em menu, e o corpo **não tem barra de
+vida** — depois de morto, o bot não tem como enxergá-lo na tela.
+
+O que o bot faz é a parte que falta: **chegar perto**. A posição do bicho é
+guardada enquanto ele está vivo, e no momento da morte vira o destino. Em
+`stand` o personagem já está colado e a tecla resolve; em `kite` ele está a
+`KITE_DIST` de distância e precisa andar até lá. O offset do corpo acompanha o
+personagem pelo odômetro — o corpo não anda, quem anda é ele.
+
+O loot roda **antes** da rota e dentro da mesma carência dela: sair andando com
+o corpo no chão é deixar o profit para trás, e o loot também anda de clique no
+mapa — clique no meio da briga trocaria *chase* por *stand*. Não chegando no
+corpo em `LOOT_PRAZO`, ele desiste: corpo em cima de escada, ou bicho novo no
+caminho, é loot que não vale a caçada.
 
 ### Como lutar: stand, chase ou kite
 
@@ -343,6 +362,7 @@ python testes/testa_kite_perseguicao.py  # clique de longe, seta de perto
 python testes/testa_andar.py          # percebe a queda, aprende o quadrado, não repete
 python testes/testa_teclas_config.py  # trocar as teclas das diagonais não derruba
 python testes/testa_erro_no_laco.py   # erro isolado não mata a caçada
+python testes/testa_loot.py           # vai até o corpo, saqueia e volta para a rota
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
 ```
 

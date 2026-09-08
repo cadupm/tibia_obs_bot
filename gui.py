@@ -88,6 +88,16 @@ ABAS = [
             ("PARAR_SE_MUDAR_ANDAR", "Parar se mudar de andar", bool,
              "caiu em escada ou buraco: para tudo"),
         ]),
+        ("Loot", "ENABLE_LOOT", [
+            ("LOOT_HOTKEY", "Tecla de saque", str,
+             "a do saque rapido, no cliente"),
+            ("LOOT_DIST", "Saquear a partir de", int,
+             "SQM: daqui a tecla alcanca o corpo"),
+            ("LOOT_TENTATIVAS", "Apertadas por corpo", int,
+             "o saque pega um item por vez"),
+            ("LOOT_PRAZO", "Desistir do corpo depois de", float,
+             "segundos tentando chegar nele"),
+        ]),
         ("Combo de magia", "ENABLE_SPELL", [
             ("SPELL_HOTKEY", "Magia do combo", str, "entra entre os turnos"),
             ("SPELL_COOLDOWN", "Cooldown da magia", float, "segundos"),

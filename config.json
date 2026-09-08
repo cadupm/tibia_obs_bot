@@ -12,7 +12,7 @@
   "MANA_THRESHOLD": 200.0,
   "MANA_COOLDOWN": 1.2,
   "ENABLE_ATTACK": true,
-  "ATTACK_MODE": "kite",
+  "ATTACK_MODE": "stand",
   "ATTACK_HOTKEY": "space",
   "ATTACK_COOLDOWN": 0.6,
   "ATTACK_CONFIRM": 4,
@@ -23,7 +23,7 @@
   "KITE_CLIQUE": 2,
   "KITE_BLOQUEIO": 3.0,
   "KITE_DIAGONAIS": true,
-  "KITE_DIAGONAIS_TECLAS": "q,e,z,c",
+  "KITE_DIAGONAIS_TECLAS": "cima-esq,cima-dir,baixo-esq,baixo-dir",
   "PARAR_SE_MUDAR_ANDAR": true,
   "ENABLE_SPELL": true,
   "SPELL_HOTKEY": "f1",
@@ -32,7 +32,7 @@
   "SPELL_DELAY_AFTER_ATTACK": 0.5,
   "ONLY_KNOWN_MONSTERS": true,
   "AUTO_LEARN": false,
-  "ENABLE_WALK": false,
+  "ENABLE_WALK": true,
   "MARK_COLOR": "azul",
   "MARK_ARRIVE": 3,
   "STOP_WALK_KEY": "esc",
@@ -42,7 +42,7 @@
   "WALK_MAX_CLICKS": 4,
   "MINIMAP_PX_SQM": 2.0,
   "WAYPOINTS_FILE": "rotas/padrao.json",
-  "USE_ROUTE_ORDER": false,
+  "USE_ROUTE_ORDER": true,
   "ENABLE_AUTOCAST": true,
   "AUTOCAST_MANA_FLOOR": 18.0,
   "OBS_MODE": true,
@@ -71,6 +71,10 @@
       "intervalo": 300.0
     }
   ],
-  "EVITAR_DIFF_MAX": 6,
-  "EVITAR_CORR_MIN": 0.95
+  "ENABLE_LOOT": true,
+  "LOOT_HOTKEY": "-",
+  "LOOT_DIST": 1,
+  "LOOT_TENTATIVAS": 3,
+  "LOOT_PRAZO": 8.0,
+  "LOOT_COOLDOWN": 0.45
 }

@@ -220,6 +220,19 @@ WALK_TIMEOUT = 15.0             # s no maximo por trecho
 #   "kite"  - anda de seta para manter distancia de todo bicho na tela,
 #             inclusive do alvo. Setas forcam stand no cliente, o que e
 #             justamente o que um kiter quer.
+# LOOT. Escolhida a TECLA e nao o clique direito no corpo: a tecla de saque
+# rapido do cliente nao precisa de coordenada nenhuma nem de acertar item em
+# menu, e o corpo nao tem barra de vida para o bot saber onde ele esta. O que o
+# bot faz e a parte que falta: CHEGAR PERTO. Em stand o personagem ja esta
+# colado no corpo; em kite ele esta a KITE_DIST de distancia, longe demais.
+ENABLE_LOOT = True
+LOOT_HOTKEY = "-"               # a tecla de saque rapido, no cliente
+LOOT_DIST = 1                   # SQM: daqui o saque alcanca o corpo
+LOOT_TENTATIVAS = 3             # apertadas por corpo (saque leva um por vez)
+LOOT_COOLDOWN = 0.45            # s entre apertadas
+LOOT_PRAZO = 8.0                # s tentando chegar no corpo antes de desistir:
+                                # corpo em cima de escada, ou bicho novo no
+                                # caminho, e loot que nao vale a cacada
 ATTACK_MODE = "stand"
 KITE_DIST = 3                   # SQM que se quer manter de qualquer bicho
 KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
@@ -2516,6 +2529,7 @@ class TravaDeAlvo:
         self.desde = None
         self.avisou = False
         self.sumidas = 0
+        self.morreu = False               # um bicho saiu da lista: o loot le
 
     def atualiza(self, alvo, alvo_sprite, sprites, agora=None):
         """Devolve True se pode apertar a tecla de atacar (nenhum alvo preso)."""
@@ -2540,6 +2554,7 @@ class TravaDeAlvo:
                 return False
             print(f"[attack] o bicho que eu atacava saiu da battle list em "
                   f"{self.sumidas} leituras seguidas: morreu, posso trocar")
+            self.morreu = True             # o loot le isto e vai buscar o corpo
             self.solta()
             return True
         self.sumidas = 0
@@ -2557,6 +2572,7 @@ class TravaDeAlvo:
         return False
 
     def solta(self):
+        # `morreu` NAO se apaga aqui: quem consome e o loot, na volta seguinte
         self.sprite, self.iguais = None, 0
         self.desde, self.avisou, self.sumidas = None, False, 0
 
@@ -3188,6 +3204,85 @@ def show_kite(segundos=20.0):
     restore_windows()
 
 
+def loot(leitura, teclado, estado, loot_cd, odo=None):
+    """
+    Vai ate o corpo do bicho que acabou de morrer e aperta a tecla de saque.
+
+    O que se guarda, no momento da morte, e ONDE o bicho estava - o corpo nao
+    tem barra de vida, entao depois de morto o bot nao tem como enxerga-lo. Dai
+    e caminho: em stand o personagem ja esta colado e a tecla resolve; em kite
+    ele esta a KITE_DIST de distancia e precisa chegar.
+
+    Devolve True enquanto estiver cuidando do loot - e assim que o trajeto da
+    rota fica esperando, em vez de sair andando e deixar o dinheiro no chao.
+    """
+    onde = estado.get("loot_onde")
+    if not ENABLE_LOOT or onde is None:
+        return False
+
+    if time.time() - estado.get("loot_desde", 0) > LOOT_PRAZO:
+        print(f"[loot] {LOOT_PRAZO:.0f}s tentando chegar no corpo em {onde}; "
+              f"desisto e sigo a rota")
+        estado["loot_onde"] = None
+        return False
+
+    # o corpo nao anda: o que muda e a posicao do personagem, e o offset dele
+    # acompanha o odometro
+    if odo is not None and "loot_pos" in estado:
+        andou = (odo.pos[0] - estado["loot_pos"][0],
+                 odo.pos[1] - estado["loot_pos"][1])
+        onde = (onde[0] - andou[0] / MINIMAP_PX_SQM,
+                onde[1] - andou[1] / MINIMAP_PX_SQM)
+        estado["loot_onde"] = onde
+        estado["loot_pos"] = tuple(odo.pos)
+
+    distancia = max(abs(onde[0]), abs(onde[1]))
+    if distancia > LOOT_DIST:
+        # longe: anda ate o corpo. Clique no mapa, que desvia de parede, e um
+        # por parada como no resto do projeto.
+        if odo is not None and odo.parado < WALK_STOP_TICKS:
+            return True
+        if not loot_cd.ready():
+            return True
+        passo = (int(round(onde[0] * MINIMAP_PX_SQM)),
+                 int(round(onde[1] * MINIMAP_PX_SQM)))
+        if abs(passo[0]) + abs(passo[1]) == 0:
+            estado["loot_onde"] = None
+            return False
+        click_minimap(leitura, passo)
+        loot_cd.mark()
+        print(f"[loot] corpo a {distancia:.0f} SQM: ando ate ele")
+        return True
+
+    if not loot_cd.ready():
+        return True
+    if not teclado.isActive:
+        focus_window(teclado)
+    pyautogui.press(LOOT_HOTKEY)
+    loot_cd.mark()
+    tentativas = estado.get("loot_tentativas", 0) + 1
+    estado["loot_tentativas"] = tentativas
+    print(f"[loot] {LOOT_HOTKEY} no corpo ({tentativas} de "
+          f"{LOOT_TENTATIVAS})")
+    if tentativas >= LOOT_TENTATIVAS:
+        estado["loot_onde"] = None
+        estado["loot_tentativas"] = 0
+        print("[loot] pronto, volto para a rota")
+        return False
+    return True
+
+
+def marca_o_corpo(estado, onde, odo=None):
+    """Guarda onde o bicho morreu, para o loot ir buscar."""
+    if not ENABLE_LOOT or onde is None:
+        return
+    estado["loot_onde"] = (float(onde[0]), float(onde[1]))
+    estado["loot_desde"] = time.time()
+    estado["loot_tentativas"] = 0
+    estado["loot_pos"] = tuple(odo.pos) if odo is not None else (0, 0)
+    print(f"[loot] o bicho morreu em {onde}: vou pegar o loot")
+
+
 def parar_de_andar(leitura, teclado=None):
     """
     Cancela o trajeto em andamento, por TECLA.
@@ -3544,6 +3639,7 @@ def run_bot():
                "rota": rota_gravada}
     click_cd = Cooldown(WALK_CLICK_COOLDOWN, 0.30)
     kite_cd = Cooldown(KITE_COOLDOWN, 0.10)
+    loot_cd = Cooldown(LOOT_COOLDOWN, 0.10)
     key_cd = Cooldown(WALK_KEY_COOLDOWN, 0.15)
     auto_cds = autocast_cooldowns()
     if auto_cds:
@@ -3654,6 +3750,18 @@ def run_bot():
 
             # so troca de alvo quando o bicho engajado sumir da battle list
             pode_trocar = trava.atualiza(alvo, alvo_sprite, sprites)
+
+            # ONDE O BICHO ESTA, enquanto vivo: o corpo nao tem barra de vida,
+            # entao depois de morto nao ha como enxerga-lo. Guardar a posicao do
+            # mais perto a cada leitura e o que permite ir buscar o loot depois.
+            if ENABLE_LOOT and entradas > 0:
+                na_tela = detect_creatures(leitura)
+                if na_tela:
+                    caminho["bicho_visto"] = min(
+                        na_tela, key=lambda c: max(abs(c[0]), abs(c[1])))
+            if ENABLE_LOOT and trava.morreu:
+                trava.morreu = False
+                marca_o_corpo(caminho, caminho.get("bicho_visto"), odo)
 
             # a lista mudou? volta a valer a pena tentar atacar
             assinatura = battle_assinatura(sprites)
@@ -3778,6 +3886,14 @@ def run_bot():
                               f"retomando o trajeto")
                         parou_por_bicho = False
                         caminho["cliques"] = 0
+                    # LOOT ANTES DA ROTA: sair andando com o corpo no chao e
+                    # deixar o profit para tras. Fica DENTRO desta carencia
+                    # porque o loot tambem anda de clique no mapa, e clique no
+                    # meio da briga troca chase/stand - o teste pegou o bot
+                    # clicando numa leitura ruim que a trava leu como morte.
+                    if loot(leitura, teclado, caminho, loot_cd, odo):
+                        time.sleep(LOOP_DELAY)
+                        continue
                     if rota_gravada:
                         follow_route(leitura, odo, caminho, click_cd)
                     elif USE_MAP_MARKS:
