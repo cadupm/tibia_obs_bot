@@ -77,6 +77,8 @@ ABAS = [
              "SQM de todo bicho na tela, inclusive o alvo"),
             ("KITE_COOLDOWN", "Intervalo entre passos", float,
              "segundos; a velocidade de andar do personagem"),
+            ("KITE_DIAGONAIS", "Usar diagonais", bool,
+             "teclado numerico; confira com --teclas"),
         ]),
         ("Combo de magia", "ENABLE_SPELL", [
             ("SPELL_HOTKEY", "Magia do combo", str, "entra entre os turnos"),

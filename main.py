@@ -229,6 +229,13 @@ KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
 KITE_PASSOS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0),
                "num7": (-1, -1), "num9": (1, -1),
                "num1": (-1, 1), "num3": (1, 1)}
+KITE_DIAGONAIS = False          # As diagonais do teclado numerico NAO moveram o
+                                # personagem no teste em jogo: de um log inteiro
+                                # de kite, o unico passo que andou foi um
+                                # "right" - as dezenas de "num9" nao saiiram do
+                                # lugar. Ligue depois de conferir com
+                                # "python main.py --teclas", que mede tecla por
+                                # tecla (com NumLock ligado costuma funcionar).
 
 # O VIEWPORT do jogo, em offsets de cliente, e o tamanho do quadrado na tela.
 # Medido no cliente 1920x1009 do usuario: a area com textura comeca em (221,61)
@@ -236,8 +243,12 @@ KITE_PASSOS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0),
 # Confira no seu layout com "python main.py --kite", que imprime o que enxerga.
 GAME_VIEW = (221, 61, 15 * 68, 11 * 68)
 TILE_PX = 68                    # px por SQM na tela do jogo
-CREATURE_BAR_W = (18, 34)       # largura da barrinha de vida sobre a criatura
-CREATURE_BAR_H = (2, 6)         # e a altura dela
+# A barrinha de vida sobre a criatura, medida na captura da cave: moldura de
+# preto puro com 31 px de largura e 4 de altura, com 2 linhas de preenchimento
+# colorido dentro. A moldura nao encurta com o dano.
+CREATURE_BAR_W = (28, 34)       # largura da moldura
+CREATURE_BAR_TALL = 4           # altura da moldura, de borda a borda
+CREATURE_BORDER_MAX = 25        # ate este brilho o pixel conta como preto puro
 CREATURE_BAR_ABOVE = 1          # a criatura fica este tanto de quadrado abaixo
                                 # da propria barra
 
@@ -2410,52 +2421,69 @@ def detect_creatures(leitura, img=None):
     Criaturas na tela do jogo, como offsets (dx, dy) em SQM a partir do
     personagem. O personagem em si nao entra na lista.
 
-    O que se procura e a BARRINHA DE VIDA que o cliente desenha sobre cada
-    criatura: uma faixa fina e saturada de 18 a 34 px (medido: 28x2, cor
-    (0,95,0) com vida cheia). Nome nao serve - seria OCR -, e o sprite da
-    criatura muda de quadro a quadro pela animacao.
+    O que se procura e a MOLDURA da barrinha de vida que o cliente desenha sobre
+    cada criatura. Medida na captura de dentro da cave, ela e assim:
+
+        ###############################     <- 31 px de preto puro
+        #VVVVVVVVVVVVVVVVVVVVVVVVVVVVV#     <- 2 linhas de preenchimento
+        #VVVVVVVVVVVVVVVVVVVVVVVVVVVVV#
+        ###############################     <- preto puro nas quatro bordas
+
+    Procurar so "faixa fina e saturada", como era antes, nao serve no viewport:
+    ali ha textura, efeito de magia e item por tudo, e o bot dizia ver 42, 90,
+    ate 202 criaturas na tela. Com a moldura preta exigida em cima, embaixo e
+    nas duas pontas, o desenho do jogo nao imita mais isso.
+
+    A moldura NAO encurta com o dano - so o preenchimento -, entao a deteccao
+    funciona igual com o bicho quase morto, que e justamente quem esta perto.
 
     A criatura fica um quadrado abaixo da propria barra. O personagem tem barra
-    igual, e ela e descartada por estar no quadrado do meio do viewport, onde
-    ele sempre esta.
+    igual, e ela e descartada por estar no quadrado do meio do viewport.
     """
     vx, vy, vw, vh = GAME_VIEW
     if img is None:
         cx, cy, _, _ = client_rect(leitura)
         img = grab((cx + vx, cy + vy, vw, vh))
     img = img.astype(np.int16)
+    preto = img.max(axis=2) < CREATURE_BORDER_MAX
     sat = img.max(axis=2) - img.min(axis=2)
-    faixa = (sat > 60) & (img.max(axis=2) > 90)
+    colorido = sat > 40
 
-    # linhas com uma corrida do tamanho de barra de criatura
-    linhas = {}
-    for y in range(faixa.shape[0]):
-        for ini, fim in _runs(faixa[y]):
-            if CREATURE_BAR_W[0] <= fim - ini + 1 <= CREATURE_BAR_W[1]:
-                linhas.setdefault(y, []).append((ini, fim - ini + 1))
+    alt, larg = preto.shape
+    achadas = []
+    for y in range(alt - CREATURE_BAR_TALL):
+        for ini_x, fim_x in _runs(preto[y]):
+            comprimento = fim_x - ini_x + 1
+            if not (CREATURE_BAR_W[0] <= comprimento <= CREATURE_BAR_W[1]):
+                continue
+            # a borda de baixo, do mesmo tamanho e no mesmo lugar
+            base = y + CREATURE_BAR_TALL - 1
+            if not preto[base, ini_x:fim_x + 1].all():
+                continue
+            # as pontas das duas linhas de dentro tambem sao preto
+            dentro = slice(y + 1, base)
+            if not (preto[dentro, ini_x].all() and preto[dentro, fim_x].all()):
+                continue
+            # e ha preenchimento colorido dentro: sem isso e so um risco preto
+            if not colorido[dentro, ini_x + 1:fim_x].any():
+                continue
+            achadas.append((ini_x, fim_x, y))
 
+    # a mesma barra aparece na varredura de cada linha da borda de cima; junta
     barras = []
-    for y in sorted(linhas):
-        for ini, larg in linhas[y]:
-            for barra in barras:
-                if y - barra["y1"] <= 1 and abs(barra["x"] - ini) <= 2:
-                    barra["y1"] = y
-                    break
-            else:
-                barras.append({"x": ini, "larg": larg, "y0": y, "y1": y})
-    barras = [b for b in barras
-              if CREATURE_BAR_H[0] <= b["y1"] - b["y0"] + 1 <= CREATURE_BAR_H[1]]
+    for ini_x, fim_x, y in achadas:
+        if any(abs(b[0] - ini_x) <= 2 and abs(b[2] - y) <= 2 for b in barras):
+            continue
+        barras.append((ini_x, fim_x, y))
 
-    # o personagem esta sempre no quadrado do meio
     meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
     criaturas = []
-    for barra in barras:
-        centro_x = barra["x"] + barra["larg"] / 2
-        col = int(centro_x // TILE_PX)
-        lin = int(barra["y0"] // TILE_PX) + CREATURE_BAR_ABOVE
+    for ini_x, fim_x, y in barras:
+        col = int(((ini_x + fim_x) / 2) // TILE_PX)
+        lin = int(y // TILE_PX) + CREATURE_BAR_ABOVE
         offset = (col - meio_col, lin - meio_lin)
-        if offset == (0, 0):
-            continue                     # e o proprio personagem
+        if offset == (0, 0) or offset in criaturas:
+            continue                     # o proprio personagem, ou repetida
         criaturas.append(offset)
     return criaturas
 
@@ -2490,8 +2518,10 @@ def passo_de_fuga(criaturas, distancia=None):
         return (longe_o_bastante(lista, distancia),
                 sum(max(abs(dx), abs(dy)) for dx, dy in lista))
 
+    passos = KITE_PASSOS if KITE_DIAGONAIS else {
+        t: p for t, p in KITE_PASSOS.items() if 0 in p}
     melhor, melhor_nota = None, nota_de(criaturas)
-    for tecla, (px, py) in KITE_PASSOS.items():
+    for tecla, (px, py) in passos.items():
         if (px, py) in criaturas:
             continue                     # o quadrado ja tem bicho: nao se anda
         depois = [(dx - px, dy - py) for dx, dy in criaturas]
@@ -2526,6 +2556,59 @@ def kite(leitura, teclado, kite_cd):
     print(f"[kite] {len(criaturas)} bicho(s) na tela, o mais perto a {perto} "
           f"SQM: ando para {tecla}")
     return True
+
+
+def show_teclas():
+    """
+    Mede QUAIS teclas de movimento realmente andam no seu cliente.
+
+    Aperta cada uma e le no minimapa se o personagem saiu do lugar. Serve para o
+    kite: as setas andam sempre, mas as diagonais do teclado numerico dependem
+    de NumLock e da configuracao do cliente - e uma tecla que nao anda faz o bot
+    parecer travado, apertando sem sair do lugar.
+
+    Precisa de um lugar sem parede em volta: parede tambem da "nao andou".
+    """
+    leitura, teclado = setup_windows()
+    if not leitura:
+        return
+    print("Apertando cada tecla de movimento e medindo no minimapa.")
+    print("Fique num lugar aberto: parede tambem aparece como 'nao andou'."
+          + chr(10))
+    odo = Odometro(leitura)
+    resultado = {}
+    for tecla in KITE_PASSOS:
+        odo.atualiza()
+        antes = tuple(odo.pos)
+        pyautogui.press(tecla)
+        for _ in range(6):
+            time.sleep(0.2)
+            odo.atualiza()
+        andou = (odo.pos[0] - antes[0], odo.pos[1] - antes[1])
+        distancia = abs(andou[0]) + abs(andou[1])
+        resultado[tecla] = distancia
+        esperado = KITE_PASSOS[tecla]
+        print(f"  {tecla:>6} (esperado {esperado}): andou {andou} "
+              f"-> {'ANDA' if distancia >= 2 else 'nao andou'}")
+        time.sleep(0.4)
+        # volta para onde estava, para nao sair andando pela cave
+        volta = {"up": "down", "down": "up", "left": "right", "right": "left",
+                 "num7": "num3", "num3": "num7", "num9": "num1",
+                 "num1": "num9"}[tecla]
+        if distancia >= 2:
+            pyautogui.press(volta)
+            time.sleep(0.6)
+
+    setas = [t for t in ("up", "down", "left", "right") if resultado[t] >= 2]
+    diagonais = [t for t in ("num7", "num9", "num1", "num3")
+                 if resultado[t] >= 2]
+    print(chr(10) + f"setas que andam: {setas or 'nenhuma'}")
+    print(f"diagonais que andam: {diagonais or 'nenhuma'}")
+    if not diagonais:
+        print("Sem diagonais, ponha KITE_DIAGONAIS = False: o bot para de "
+              "tentar teclas que nao movem. Com NumLock ligado costuma "
+              "funcionar - vale testar de novo.")
+    restore_windows()
 
 
 def show_kite(segundos=20.0):
@@ -3159,6 +3242,8 @@ if __name__ == "__main__":
                         help="Diagnostico da Battle List: entradas e alvo atual.")
     parser.add_argument("--kite", action="store_true",
                         help="Diagnostico do kite: criaturas na tela em SQM.")
+    parser.add_argument("--teclas", action="store_true",
+                        help="Mede quais teclas de movimento andam no cliente.")
     parser.add_argument("--obs", action="store_true",
                         help="Ler do projetor do OBS em vez da janela do Tibia.")
     args = parser.parse_args()
@@ -3172,6 +3257,8 @@ if __name__ == "__main__":
             show_battle()
         elif args.kite:
             show_kite()
+        elif args.teclas:
+            show_teclas()
         elif args.record:
             record_waypoints()
         elif args.marcas:

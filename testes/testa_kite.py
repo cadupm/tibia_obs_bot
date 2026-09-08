@@ -17,6 +17,13 @@ import main
 
 falhas = []
 
+# A decisao e testada com as diagonais LIGADAS, que e o comportamento completo.
+# O padrao do projeto e desligado porque no cliente testado o teclado numerico
+# nao move o personagem (ver KITE_DIAGONAIS no main.py).
+print(f"KITE_DIAGONAIS no projeto: {main.KITE_DIAGONAIS} "
+      f"(este teste liga para medir tambem as diagonais)")
+main.KITE_DIAGONAIS = True
+
 # ------------------------------------------------------- 1) deteccao na captura
 AMOSTRA = AQUI + "tela_cave.png"     # PNG e nao npy: um terco do tamanho, e
 if os.path.exists(AMOSTRA):          # ja exercita o leitor do png.py
@@ -27,12 +34,19 @@ if os.path.exists(AMOSTRA):          # ja exercita o leitor do png.py
     pedaco = tela[vy:vy + vh, vx:vx + vw]
     cheio[:pedaco.shape[0], :pedaco.shape[1]] = pedaco
     achadas = main.detect_creatures(None, img=cheio)
-    print("captura da cave (Skeleton 1 SQM a esquerda do personagem):")
+    # as duas criaturas da cena, conferidas uma a uma no pixel:
+    #   (-1, 0) Skeleton colado a esquerda, barra cheia (moldura em 630,378)
+    #   (-4, 3) Bonelord no canto de baixo, 14px de barra ~48% (443,598)
+    # a barra de vida E a de mana do proprio personagem caem no quadrado do meio
+    # (698,374 verde e 698,378 azul) e sao descartadas.
+    ESPERADAS = [(-1, 0), (-4, 3)]
+    print("captura da cave (Skeleton colado a esquerda, Bonelord no canto):")
     print("  criaturas:", achadas)
     print("  mais perto:", main.longe_o_bastante(achadas), "SQM")
     print("  passo de fuga:", main.passo_de_fuga(achadas))
-    if achadas != [(-1, 0)]:
-        falhas.append(f"deteccao na captura: esperava [(-1, 0)], saiu {achadas}")
+    if sorted(achadas) != sorted(ESPERADAS):
+        falhas.append(f"deteccao na captura: esperava {ESPERADAS}, "
+                      f"saiu {achadas}")
     if main.passo_de_fuga(achadas) != "right":
         falhas.append("fuga na captura: devia ser para a direita")
 else:

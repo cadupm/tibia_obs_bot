@@ -45,7 +45,10 @@ def viewport_com_bicho():
     # a barra e desenhada no quadrado ACIMA da criatura - medido nas duas barras
     # da captura de verdade, e o que o CREATURE_BAR_ABOVE desconta
     y = (meio_lin - main.CREATURE_BAR_ABOVE) * main.TILE_PX + 10
-    img[y:y + 2, x:x + 28] = (0, 95, 0)           # medido no jogo: 28x2 (0,95,0)
+    # a barra do jogo: moldura de preto puro 31x4 com 2 linhas de preenchimento
+    # colorido dentro, como medido na captura de verdade
+    img[y:y + 4, x:x + 31] = (0, 0, 0)
+    img[y + 1:y + 3, x + 1:x + 30] = (0, 95, 0)
     return img
 
 
@@ -89,6 +92,7 @@ main.ENABLE_HEAL = main.ENABLE_MANA = False
 main.ENABLE_SPELL = main.ENABLE_AUTOCAST = False
 main.ATTACK_CONFIRM = 2
 main.KITE_COOLDOWN = 0.0
+main.KITE_DIAGONAIS = False       # como o projeto vem: so setas
 main.STOP = False
 
 main.run_bot()

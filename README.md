@@ -63,12 +63,38 @@ que se escolhe aqui é o que **o bot** faz enquanto luta:
 | `chase` | **não** manda a tecla de parada — o `esc` cancelaria o follow do cliente junto com o ataque. Só para de clicar no mapa e deixa o cliente perseguir |
 | `kite` | anda de seta para manter `KITE_DIST` SQM de todo bicho na tela, inclusive do alvo |
 
-No kite, o bot acha as criaturas pela **barrinha de vida** que o cliente desenha
-sobre cada uma (medido: 28×2 px, cor (0,95,0) com vida cheia) e converte a
-posição dela em SQM. A barra do próprio personagem cai no quadrado do meio do
-viewport e é descartada. As **diagonais** (teclado numérico) não são enfeite:
-com um bicho à esquerda e outro em cima, nenhum dos quatro lados retos aumenta a
-distância do mais perto — só a diagonal aumenta.
+No kite, o bot acha as criaturas pela **moldura da barrinha de vida** que o
+cliente desenha sobre cada uma. Medida na captura de dentro da cave, ela é
+assim:
+
+```
+###############################     <- 31 px de preto puro
+#VVVVVVVVVVVVVVVVVVVVVVVVVVVVV#     <- 2 linhas de preenchimento colorido
+#VVVVVVVVVVVVVVVVVVVVVVVVVVVVV#
+###############################     <- preto puro nas quatro bordas
+```
+
+Procurar só "faixa fina e saturada" **não serve** no viewport: ali há textura,
+efeito de magia e item por tudo, e o bot dizia ver 42, 90, até 202 criaturas na
+tela. Exigindo a moldura preta em cima, embaixo e nas duas pontas, sobram só as
+barras de verdade. A moldura **não encurta** com o dano — só o preenchimento —
+então a detecção funciona igual com o bicho quase morto, que é justamente quem
+está perto. A barra de vida **e a de mana** do próprio personagem caem no
+quadrado do meio do viewport e são descartadas.
+
+As **diagonais** (teclado numérico) vêm desligadas: no cliente testado elas não
+movem o personagem — de um log inteiro de kite, o único passo que andou foi um
+`right`, e as dezenas de `num9` não saíram do lugar. Meça no seu:
+
+```
+python main.py --teclas
+```
+
+Ele aperta cada tecla de movimento, lê no minimapa se o personagem saiu do
+lugar e volta para o ponto de partida. Andando as diagonais (com NumLock ligado
+costuma andar), ligue `KITE_DIAGONAIS` — elas resolvem um caso que as setas não
+resolvem: com um bicho à esquerda e outro em cima, nenhum dos quatro lados
+retos aumenta a distância do mais perto.
 
 O kite é comportamento de **combate**, não de rota: funciona com `ENABLE_WALK`
 desligado, para quem liga o bot só para lutar.
@@ -163,7 +189,8 @@ testes/         simulações do comportamento de rota e da leitura de tela
 Modos de linha de comando úteis: `--bars` (só lê vida/mana), `--battle`
 (diagnóstico da battle list), `--calib` (coordenada e cor sob o mouse),
 `--zoom` (mede px por SQM no zoom em uso), `--marcas` (grava a ordem da rota),
-`--kite` (criaturas na tela em SQM, com a grade desenhada num PNG).
+`--kite` (criaturas na tela em SQM, com a grade desenhada num PNG), `--teclas`
+(mede quais teclas de movimento andam no cliente).
 
 ## Testes
 

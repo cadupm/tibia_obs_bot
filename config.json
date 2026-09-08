@@ -65,5 +65,6 @@
       "tecla": "f10",
       "intervalo": 300.0
     }
-  ]
+  ],
+  "KITE_DIAGONAIS": false
 }
