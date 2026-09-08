@@ -278,6 +278,22 @@ linha reta.
 Nos dois modos o alvo só muda ao **chegar** na marca, conferido por pixel: a
 cruz do personagem tem de estar debaixo dela.
 
+### Cura
+
+A emergência tem **cooldown próprio**. Compartilhando o da cura normal, uma cura
+que acabou de sair travava a emergência por `HEAL_COOLDOWN` inteiro — medido: a
+vida passou do limite forte na leitura 3 e a emergência só saía na 5. Passar do
+limite forte é justamente quando não se pode esperar.
+
+Abaixo do limite forte, o bot **alterna** as duas: a emergência tem prioridade e,
+enquanto ela está em cooldown, a cura normal sai. Mais cura por segundo quando o
+personagem está em perigo — gasta as duas poções, e é de propósito.
+
+**Curar não descarta a leitura.** Havia um `continue` ali, e começando com a vida
+abaixo do limite o bot passava a leitura toda curando: medido, 7 curas e só 3
+ataques em 40 leituras. Cura e ataque são teclas diferentes e não brigam — a cura
+sai primeiro, que é a prioridade, e o resto da leitura continua.
+
 ## Decisões que vieram de erro medido
 
 O código está comentado com o *porquê* de cada uma delas.
@@ -363,6 +379,7 @@ python testes/testa_andar.py          # percebe a queda, aprende o quadrado, nã
 python testes/testa_teclas_config.py  # trocar as teclas das diagonais não derruba
 python testes/testa_erro_no_laco.py   # erro isolado não mata a caçada
 python testes/testa_loot.py           # vai até o corpo, saqueia e volta para a rota
+python testes/testa_heal.py           # cura começando com vida baixa; emergência na frente
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
 ```
 

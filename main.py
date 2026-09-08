@@ -2434,16 +2434,21 @@ class Cooldown:
         self.atual = varia(self.seconds, self.variacao)
 
 
-def auto_heal(hp, mana, heal_cd, mana_cd):
+def auto_heal(hp, mana, heal_cd, mana_cd, forte_cd=None):
     """Aplica cura e mana pot conforme os limites configurados."""
     lim_forte = como_fracao(HEAL_STRONG_THRESHOLD, HP_MAX)
     lim_cura = como_fracao(HEAL_THRESHOLD, HP_MAX)
     lim_mana = como_fracao(MANA_THRESHOLD, MANA_MAX)
 
+    # A EMERGENCIA TEM COOLDOWN PROPRIO. Compartilhando o da cura normal, uma
+    # cura que acabou de sair travava a emergencia por HEAL_COOLDOWN inteiro -
+    # medido: a vida passou do limite na leitura 3 e a emergencia so saiu na 5.
+    # Passar do limite forte e justamente quando nao se pode esperar.
+    forte_cd = heal_cd if forte_cd is None else forte_cd
     if (ENABLE_HEAL and HEAL_STRONG_HOTKEY and lim_forte and hp <= lim_forte
-            and heal_cd.ready()):
+            and forte_cd.ready()):
         pyautogui.press(HEAL_STRONG_HOTKEY)
-        heal_cd.mark()
+        forte_cd.mark()
         print(f"[heal] emergencia ({HEAL_STRONG_HOTKEY}) - hp {formata(hp, HP_MAX)}")
         return "cura"
 
@@ -3619,6 +3624,7 @@ def run_bot():
     else:
         print(f"[luta] modo {ATTACK_MODE!r} desconhecido; tratando como stand")
     heal_cd = Cooldown(HEAL_COOLDOWN)                 # sem variacao: cura na hora
+    forte_cd = Cooldown(HEAL_COOLDOWN)                # a emergencia tem o seu
     mana_cd = Cooldown(MANA_COOLDOWN, 0.10)
     attack_cd = Cooldown(ATTACK_COOLDOWN, 0.15)
     spell_cd = Cooldown(SPELL_COOLDOWN, 0.15)
@@ -3709,10 +3715,12 @@ def run_bot():
                 continue
 
             # 1) prioridade: se curou nesta iteracao, nao faz mais nada
-            agiu = auto_heal(hp, mana, heal_cd, mana_cd)
-            if agiu == "mana":
-                time.sleep(LOOP_DELAY)
-                continue
+                # CURAR NAO DESCARTA A LEITURA. Antes havia um "continue" aqui, e
+            # comecando com a vida abaixo do limite o bot passava a leitura toda
+            # curando: medido, 7 curas e so 3 ataques em 40 leituras. Cura e
+            # ataque sao teclas diferentes e nao brigam - a cura sai primeiro,
+            # que e a prioridade, e o resto da leitura continua.
+            agiu = auto_heal(hp, mana, heal_cd, mana_cd, forte_cd)
             if agiu:
                 # cura que nao levanta a vida e sinal de pocao acabada, hotkey
                 # errada ou dano maior que a cura - vale avisar em vez de martelar
@@ -3726,8 +3734,8 @@ def run_bot():
                 else:
                     curas_sem_efeito = 0
                 hp_da_ultima_cura = hp
-                time.sleep(LOOP_DELAY)
-                continue
+                # sem "continue": a cura ja saiu, e a mesma leitura ainda serve
+                # para atacar, conjurar e andar
 
             # 2) autocast: teclas de intervalo fixo, depois da cura
             run_autocast(auto_cds, mana)
