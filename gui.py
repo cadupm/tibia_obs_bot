@@ -68,6 +68,8 @@ ABAS = [
              "evita trocar de bicho por leitura ruim"),
             ("TARGET_LOST_MAX", "Segurar o alvo por", float,
              "segundos; so troca quando ele sumir da battle list"),
+            ("TARGET_GONE_READS", "Leituras sem o bicho p/ dar por morto", int,
+             "uma leitura ruim nao conta como morte"),
         ]),
         ("Combo de magia", "ENABLE_SPELL", [
             ("SPELL_HOTKEY", "Magia do combo", str, "entra entre os turnos"),
@@ -86,6 +88,8 @@ ABAS = [
              "cancela o trajeto ao ver bicho; vazio = nao cancela"),
             ("STOP_ATTACK_DELAY", "Esperar antes de atacar", float,
              "segundos; a parada tem de ser processada primeiro"),
+            ("WALK_RESUME_READS", "Leituras limpas p/ voltar a andar", int,
+             "clique no mapa durante o ataque troca chase/stand"),
             ("WALK_CLICK_COOLDOWN", "Intervalo entre cliques", float, "segundos"),
             ("WALK_MAX_CLICKS", "Cliques sem progresso", int,
              "antes de trocar de marca"),

@@ -89,6 +89,12 @@ O código está comentado com o *porquê* de cada uma delas.
 - **Parar de andar é por tecla, não por clique.** O clique era no próprio
   quadrado do personagem; com zoom out um pixel vale 2 SQM e o clique de "pare"
   cai longe, mandando ele *andar*.
+- **Nenhum clique no mapa enquanto há bicho.** No cliente, clique no mapa ou
+  tecla de direção durante o ataque troca o modo de luta de *chase* para
+  *stand*. Então o trajeto só volta depois de a battle list ficar limpa por
+  várias leituras seguidas — uma leitura ruim no meio da briga não pode virar
+  clique. E "sumiu da lista" só conta como morte depois de leituras seguidas
+  sem a entrada.
 - **O ataque sai depois da parada**, com um respiro: a tecla de parada do
   cliente solta o alvo, e mandada depois mataria o ataque recém-dado.
 - **Odometria tirada das próprias marcas**, não da correlação do minimapa: na
@@ -128,6 +134,7 @@ python testes/testa_caverna_c.py       # caverna em ramo: varre um lado, volta, 
 python testes/testa_grampo.py          # dois braços colados com pedra no meio
 python testes/testa_rota_ordem.py      # rota gravada: segue a ordem, começando do meio
 python testes/testa_trava_alvo.py      # não troca de alvo até o bicho sumir da lista
+python testes/testa_ordem_parada.py   # para antes de atacar; não clica no mapa lutando
 ```
 
 Os que leem imagem (`testa_bars.py`, `testa_moribundo.py`) precisam das amostras

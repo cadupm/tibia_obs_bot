@@ -60,5 +60,7 @@
       "tecla": "f10",
       "intervalo": 300.0
     }
-  ]
+  ],
+  "TARGET_GONE_READS": 3,
+  "WALK_RESUME_READS": 5
 }

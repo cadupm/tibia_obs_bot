@@ -44,21 +44,35 @@ pode = roda("bicho com 1 de vida, moldura piscando",
 if pode != [True, False, False, False, False, False]:
     falhas.append("segurou errado com o bicho ainda na lista")
 
-# 2) o bicho morre: some da lista
-pode = roda("o bicho morre e some da lista",
-            [(True, A, [A, B]),           # engajado, dois na lista
-             (False, None, [A, B]),       # leitura ruim: nao pode trocar
-             (False, None, [B])])         # A sumiu: pode
-if pode != [False, False, True]:
-    falhas.append("nao liberou quando o bicho sumiu")
+# 2) o bicho morre: some da lista. Uma leitura sem ele NAO basta - leitura ruim
+# e comum, e enquanto o bot acha que ha bicho ele nao clica no mapa (clique
+# durante o ataque troca chase/stand no cliente).
+pode = roda(f"o bicho morre e some da lista "
+            f"({main.TARGET_GONE_READS} leituras para valer)",
+            [(True, A, [A, B]),                        # engajado, dois na lista
+             (False, None, [A, B])]                    # leitura ruim: segura
+            + [(False, None, [B])] * main.TARGET_GONE_READS)   # A sumiu de vez
+esperado = [False, False] + [False] * (main.TARGET_GONE_READS - 1) + [True]
+if pode != esperado:
+    falhas.append(f"morte: esperava {esperado}, saiu {pode}")
 
-# 3) dois bichos IGUAIS: so libera quando o numero cai
+# 3) dois bichos IGUAIS: so libera quando o numero cai e continua caido
 pode = roda("dois bichos iguais, um morre",
             [(True, A, [A, A]),
-             (False, None, [A, A]),       # os dois vivos: segura
-             (False, None, [A])])         # um morreu: libera
-if pode != [False, False, True]:
-    falhas.append("errou com dois bichos iguais")
+             (False, None, [A, A])]                    # os dois vivos: segura
+            + [(False, None, [A])] * main.TARGET_GONE_READS)   # um morreu
+esperado = [False, False] + [False] * (main.TARGET_GONE_READS - 1) + [True]
+if pode != esperado:
+    falhas.append(f"dois iguais: esperava {esperado}, saiu {pode}")
+
+# 4) a entrada PISCA: sumiu uma leitura e voltou. Nao pode contar como morte.
+pode = roda("entrada piscou e voltou",
+            [(True, A, [A]),
+             (False, None, []),           # apagao de uma leitura
+             (False, None, [A]),          # voltou: o bicho esta vivo
+             (False, None, [A])])
+if any(pode):
+    falhas.append(f"tratou piscada como morte: {pode}")
 
 # 4) leitura ruim teimosa: solta depois de TARGET_LOST_MAX
 longa = [(True, A, [A])] + [(False, None, [A])] * 40

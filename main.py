@@ -162,6 +162,14 @@ BATTLE_SPRITE_TOP_MIN = 8   # coloridos na METADE DE CIMA da caixa. O sprite da
                             # linha da barra e da 0 ali. Sem isto, "Magic",
                             # "Fist" e "Club" do widget Skills entravam como
                             # bicho na lista - com a battle list vazia.
+WALK_RESUME_READS = 5       # leituras seguidas de battle list limpa antes de
+                            # voltar a clicar no mapa. Clique durante o ataque
+                            # troca chase/stand no cliente, entao aqui se paga
+                            # meio segundo para nao arriscar isso.
+TARGET_GONE_READS = 3       # leituras seguidas SEM a entrada do bicho para dar
+                            # ele por morto. Uma leitura ruim nao vale: enquanto
+                            # o bot acha que ha bicho, ele nao anda nem clica no
+                            # mapa - clique durante o ataque troca chase/stand.
 TARGET_LOST_MAX = 4.0       # s segurando o ataque quando a moldura do alvo some
                             # mas a entrada dele continua na battle list. Passado
                             # isso, assume-se leitura ruim de verdade e reengaja.
@@ -2242,6 +2250,7 @@ class TravaDeAlvo:
         self.iguais = 0
         self.desde = None
         self.avisou = False
+        self.sumidas = 0
 
     def atualiza(self, alvo, alvo_sprite, sprites, agora=None):
         """Devolve True se pode apertar a tecla de atacar (nenhum alvo preso)."""
@@ -2250,17 +2259,25 @@ class TravaDeAlvo:
             self.sprite = alvo_sprite
             self.iguais = sum(1 for sp in sprites
                               if sprite_igual(sp, alvo_sprite))
-            self.desde, self.avisou = None, False
+            self.desde, self.avisou, self.sumidas = None, False, 0
             return False
         if self.sprite is None:
             return True
 
         iguais_agora = sum(1 for sp in sprites if sprite_igual(sp, self.sprite))
         if iguais_agora < self.iguais:
-            print("[attack] o bicho que eu atacava sumiu da battle list: "
-                  "morreu, posso trocar de alvo")
+            # sumir de UMA leitura nao e morrer: a leitura da battle list falha
+            # de vez em quando, e tratar isso como morte fazia o bot voltar a
+            # clicar no mapa no meio da luta - o que no cliente troca o modo de
+            # luta de "chase" para "stand".
+            self.sumidas += 1
+            if self.sumidas < TARGET_GONE_READS:
+                return False
+            print(f"[attack] o bicho que eu atacava saiu da battle list em "
+                  f"{self.sumidas} leituras seguidas: morreu, posso trocar")
             self.solta()
             return True
+        self.sumidas = 0
         if self.desde is None:
             self.desde = agora
         if not self.avisou:
@@ -2275,7 +2292,8 @@ class TravaDeAlvo:
         return False
 
     def solta(self):
-        self.sprite, self.iguais, self.desde, self.avisou = None, 0, None, False
+        self.sprite, self.iguais = None, 0
+        self.desde, self.avisou, self.sumidas = None, False, 0
 
 
 def attack_monster(teclado, entradas, alvo, attack_cd, confirmado=True,
@@ -2677,6 +2695,7 @@ def run_bot():
     parou_por_bicho = False
     assinatura_vista, sem_resposta, lista_inutil = None, 0, None
     trava = TravaDeAlvo()
+    limpo = 0
     espera_magia = 0.0
     curas_sem_efeito, hp_da_ultima_cura = 0, None
     avisou_impasse = False
@@ -2823,18 +2842,29 @@ def run_bot():
         # briga: e isso que faz o reclique depois da luta cair no lugar certo.
         if ENABLE_WALK:
             odo.atualiza()
+            # LUTANDO NAO SE ANDA, e a razao nao e so nao puxar monstro: no
+            # cliente, tecla de direcao ou clique no mapa durante o ataque troca
+            # o modo de luta de "chase" para "stand". Por isso o trajeto tambem
+            # fica preso enquanto a trava acha que o bicho esta vivo - se a
+            # entrada dele falhar numa leitura, o bot nao pode sair clicando.
+            lutando = atacaveis > 0 or bool(alvo) or not pode_trocar
             if USE_MAP_MARKS:
                 # acompanha as marcas SEMPRE, inclusive lutando: se o rastreio
                 # para durante a briga, ao voltar o bot nao sabe mais de onde
                 # veio e a regra de ouro manda ele para tras. Lutando, porem, o
                 # que o bicho empurra nao conta como visita.
-                lutando = atacaveis > 0 or bool(alvo)
                 track_marks(leitura, caminho, andando=not lutando,
                             odo=odo)
-            # NPC e player na lista nao seguram a rota; alvo engajado sim
-            if atacaveis == 0 and not alvo:
+            # O trajeto so volta depois de a lista ficar limpa por VARIAS
+            # leituras seguidas. Uma leitura ruim no meio da briga nao pode
+            # virar clique no mapa: no cliente, clique no mapa durante o ataque
+            # troca o modo de luta de "chase" para "stand". Perder meio segundo
+            # aqui e barato; trocar o modo do personagem, nao.
+            limpo = 0 if lutando else limpo + 1
+            if not lutando and limpo >= WALK_RESUME_READS:
                 if parou_por_bicho:
-                    print("[walk] battle list limpa, retomando o trajeto")
+                    print(f"[walk] battle list limpa por {limpo} leituras, "
+                          f"retomando o trajeto")
                     parou_por_bicho = False
                     caminho["cliques"] = 0
                 if rota_gravada:
