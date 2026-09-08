@@ -222,6 +222,13 @@ WALK_TIMEOUT = 15.0             # s no maximo por trecho
 ATTACK_MODE = "stand"
 KITE_DIST = 3                   # SQM que se quer manter de qualquer bicho
 KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
+KITE_AVISA_SEM_VER = 6          # leituras com bicho na lista e nada na tela
+                                # antes de avisar no log
+KITE_CLIQUE_ESPERA = 1.5        # s: se o personagem nao parou nesse tempo, o
+                                # trajeto travou e vale clicar de novo. Antes o
+                                # clique saia a cada KITE_COOLDOWN e cancelava o
+                                # trajeto anterior toda vez - a perseguicao
+                                # andava aos centimetros.
 KITE_CLIQUE = 2                 # SQM alem da distancia pedida a partir dos quais
                                 # se usa clique no mapa em vez de seta: seta e
                                 # um quadrado por vez e esbarra em tudo, clique
@@ -2752,6 +2759,17 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
     # Isso vale so no modo kite: aqui as setas ja forcam "stand" no cliente,
     # entao o clique nao troca modo de luta nenhum.
     if perto is not None and perto >= KITE_DIST + KITE_CLIQUE:
+        # DEIXAR O CLIQUE TERMINAR. Clique no mapa e um trajeto inteiro, e
+        # clicar de novo no meio dele CANCELA o anterior: clicando a cada
+        # KITE_COOLDOWN o personagem re-rotava sem parar e andava aos
+        # centimetros - era por isso que a perseguicao nao saia do lugar.
+        #
+        # Entao so se clica com o personagem PARADO (que e como a rota faz), ou
+        # depois de KITE_CLIQUE_ESPERA se ele travou no caminho.
+        andando = odo is not None and odo.parado < WALK_STOP_TICKS
+        desde = agora - estado.get("clicou_em", 0.0)
+        if andando and desde < KITE_CLIQUE_ESPERA:
+            return False                   # o trajeto de antes ainda esta indo
         alvo = min(criaturas, key=lambda c: max(abs(c[0]), abs(c[1])))
         reta = (alvo[0] ** 2 + alvo[1] ** 2) ** 0.5
         if reta > 0:
@@ -2762,6 +2780,7 @@ def kite(leitura, teclado, kite_cd, lugares=None, odo=None, estado=None):
                 click_minimap(leitura, passo)
                 kite_cd.mark()
                 estado.pop("ultimo", None)     # clique nao e passo de seta
+                estado["clicou_em"] = agora
                 print(f"[kite] bicho a {perto} SQM (correu): clico no mapa "
                       f"para chegar a {KITE_DIST} dele")
                 return True
@@ -3540,6 +3559,19 @@ def run_bot():
         # andar desligado. Ficava dentro do bloco da rota e nao acontecia nada
         # para quem so quer o bot lutando.
         if lutando and ATTACK_MODE == "kite":
+            # bicho na lista mas fora da tela: a tela alcanca 7 SQM de lado e 5
+            # de altura, e o que corre alem disso o bot nao ve. Sem este aviso
+            # nao ha como saber, num log, se ele "nao perseguiu" por isso ou por
+            # decisao errada.
+            if entradas > 0 and not detect_creatures(leitura):
+                sem_ver = estado_kite.get("sem_ver", 0) + 1
+                estado_kite["sem_ver"] = sem_ver
+                if sem_ver == KITE_AVISA_SEM_VER:
+                    print(f"[kite] {entradas} na battle list e nenhum bicho na "
+                          f"tela: correu para fora do alcance da tela "
+                          f"(7 SQM de lado, 5 de altura)")
+            else:
+                estado_kite["sem_ver"] = 0
             if odo_kite is None:
                 odo_kite = Odometro(leitura)
             odo_kite.atualiza()

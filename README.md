@@ -104,9 +104,15 @@ perto ele volta para a seta, que é o que dá controle fino.
 Isso vale só no modo kite: ali as setas já forçam *stand* no cliente, então o
 clique não troca modo de luta nenhum.
 
+**O clique tem de terminar.** Clique no mapa é um trajeto inteiro, e clicar de
+novo no meio dele **cancela** o anterior: clicando a cada `KITE_COOLDOWN` o
+personagem re-rotava sem parar e andava aos centímetros — era por isso que a
+perseguição não saía do lugar. Então só se clica com o personagem **parado**
+(como a rota faz) ou depois de `KITE_CLIQUE_ESPERA` se ele travou no caminho.
+
 Limite medido: o viewport tem 15×11 quadrados, então a tela alcança **7 SQM na
 horizontal e 5 na vertical**. Bicho que corre além disso não aparece — não há o
-que perseguir.
+que perseguir. Nesse caso o log avisa: `N na battle list e nenhum bicho na tela`.
 
 ### Parede
 

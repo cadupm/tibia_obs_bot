@@ -69,5 +69,6 @@
       "intervalo": 300.0
     }
   ],
-  "KITE_CLIQUE": 2
+  "KITE_CLIQUE": 2,
+  "KITE_CLIQUE_ESPERA": 1.5
 }

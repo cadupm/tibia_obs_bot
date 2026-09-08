@@ -23,9 +23,11 @@ class Janela:
 
 
 class OdoFalso:
-    def __init__(self):
+    """`parado` alto = personagem parado, que e quando o clique pode sair."""
+
+    def __init__(self, parado=9):
         self.pos = [0, 0]
-        self.parado = 9
+        self.parado = parado
 
     def atualiza(self):
         pass
@@ -96,6 +98,47 @@ print(f"\n  bicho a {LONGE} SQM: clique andaria {andaria:.0f} SQM, "
 if abs((LONGE - andaria) - D) > 1:
     falhas.append(f"o clique pararia a {LONGE - andaria:.0f} SQM do bicho, "
                   f"nao a {D}")
+
+# ------------------------------- o clique tem de deixar o trajeto TERMINAR
+# Clique no mapa e um trajeto inteiro; clicar de novo no meio dele cancela o
+# anterior e o personagem anda aos centimetros. Andando, so se clica de novo
+# depois de KITE_CLIQUE_ESPERA.
+print("\ncom o personagem ANDANDO (trajeto em curso):")
+relogio = {"t": 100.0}
+main.time = type("T", (), {"time": staticmethod(lambda: relogio["t"]),
+                           "sleep": staticmethod(lambda s: None)})()
+main.grab = lambda regiao, _t=viewport_com_bicho(7, 0): _t
+estado = {}
+andando = OdoFalso(parado=0)
+
+acoes.clear()
+main.kite(Janela(), Janela(), SemEspera(), {}, odo=andando, estado=estado)
+print(f"  primeiro clique: {acoes}")
+if not acoes:
+    falhas.append("nao clicou nem na primeira vez")
+
+acoes.clear()
+relogio["t"] += 0.4                        # ainda no meio do trajeto
+main.kite(Janela(), Janela(), SemEspera(), {}, odo=andando, estado=estado)
+print(f"  0,4s depois, ainda andando: {acoes or 'nao clicou (certo)'}")
+if acoes:
+    falhas.append("clicou de novo no meio do trajeto, cancelando o anterior")
+
+acoes.clear()
+relogio["t"] += main.KITE_CLIQUE_ESPERA     # travou no caminho
+main.kite(Janela(), Janela(), SemEspera(), {}, odo=andando, estado=estado)
+print(f"  {main.KITE_CLIQUE_ESPERA}s depois, sem ter parado: "
+      f"{acoes or 'nao clicou'}")
+if not acoes:
+    falhas.append("travado no caminho e nao clicou de novo")
+
+acoes.clear()
+relogio["t"] += 0.1
+main.kite(Janela(), Janela(), SemEspera(), {}, odo=OdoFalso(parado=9),
+          estado=estado)
+print(f"  personagem PARADO: {acoes or 'nao clicou'}")
+if not acoes:
+    falhas.append("personagem parado e nao clicou")
 
 print("\nVEREDITO:", "OK - persegue de clique longe e de seta perto"
       if not falhas else "FALHOU: " + "; ".join(falhas))
