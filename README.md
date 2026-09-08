@@ -177,8 +177,9 @@ python testes/testa_ordem_parada.py   # para antes de atacar; não clica no mapa
 python testes/testa_kite.py           # acha as criaturas na tela e sabe para onde fugir
 ```
 
-`testa_kite.py` usa `tela_cave.npy`, uma captura de dentro da cave que vai no
-repositório: é ela que prova a detecção de criatura contra pixel de verdade.
+`testa_kite.py` usa `tela_cave.png`, uma captura de dentro da cave que vai no
+repositório (696 KB): é ela que prova a detecção de criatura contra pixel de
+verdade.
 `testa_bars.py` e `testa_moribundo.py` precisam de amostras `.npy` que não vão.
 `png.py` ali do lado é um leitor de PNG em numpy — o projeto não usa Pillow, e o
 mss escreve PNG mas não lê.

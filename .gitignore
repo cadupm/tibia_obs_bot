@@ -6,4 +6,4 @@ __pycache__/
 *.png
 *.npy
 !docs/*.png
-!testes/tela_cave.npy
+!testes/tela_cave.png

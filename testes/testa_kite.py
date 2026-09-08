@@ -18,9 +18,10 @@ import main
 falhas = []
 
 # ------------------------------------------------------- 1) deteccao na captura
-AMOSTRA = AQUI + "tela_cave.npy"
-if os.path.exists(AMOSTRA):
-    tela = np.load(AMOSTRA)
+AMOSTRA = AQUI + "tela_cave.png"     # PNG e nao npy: um terco do tamanho, e
+if os.path.exists(AMOSTRA):          # ja exercita o leitor do png.py
+    import png
+    tela = png.le(AMOSTRA)
     vx, vy, vw, vh = main.GAME_VIEW
     cheio = np.zeros((vh, vw, 3), dtype=tela.dtype)   # a amostra e um recorte
     pedaco = tela[vy:vy + vh, vx:vx + vw]
