@@ -33,7 +33,7 @@
   "ONLY_KNOWN_MONSTERS": true,
   "AUTO_LEARN": false,
   "LOOT_SO_MARCADOS": true,
-  "ENABLE_WALK": true,
+  "ENABLE_WALK": false,
   "MARK_COLOR": "azul",
   "MARK_ARRIVE": 3,
   "STOP_WALK_KEY": "esc",

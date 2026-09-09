@@ -28,6 +28,7 @@ import ctypes
 import json
 import os
 import random
+import sys
 import ctypes.wintypes as wt
 import time
 
@@ -5426,6 +5427,57 @@ def diagnostico_grade():
           "multiplo do tamanho do quadrado.")
 
 
+class Espelho:
+    """
+    Escreve no lugar de sempre E num arquivo.
+
+    O log do bot vivia so na tela: quando ele erra em jogo, a unica coisa que
+    diz QUAL caminho tomou - a moldura do alvo, a barra que sumiu, a
+    comparacao de imagem - e uma linha que ja rolou para fora. Sem ela, todo
+    diagnostico vira palpite sobre a captura, e ja custou varias rodadas de
+    conserto no lugar errado.
+    """
+
+    def __init__(self, original, arquivo):
+        self.original, self.arquivo = original, arquivo
+
+    def write(self, texto):
+        if self.original is not None:
+            try:
+                self.original.write(texto)
+            except Exception:
+                pass
+        try:
+            self.arquivo.write(texto)
+            self.arquivo.flush()      # cacada que trava nao pode perder o fim
+        except Exception:
+            pass
+
+    def flush(self):
+        for onde in (self.original, self.arquivo):
+            try:
+                if onde is not None:
+                    onde.flush()
+            except Exception:
+                pass
+
+
+def abre_o_log():
+    """Abre bot.log para esta sessao. Devolve (arquivo, stdout, stderr)."""
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "bot.log")
+    try:
+        arquivo = open(caminho, "w", encoding="utf-8", errors="replace")
+    except OSError as erro:
+        print(f"[log] nao consegui abrir {caminho}: {erro}")
+        return None, sys.stdout, sys.stderr
+    antes = (sys.stdout, sys.stderr)
+    sys.stdout = Espelho(antes[0], arquivo)
+    sys.stderr = Espelho(antes[1], arquivo)
+    print(f"[log] esta sessao tambem vai para {caminho}")
+    return arquivo, antes[0], antes[1]
+
+
 def run_bot():
     """Loop principal do bot."""
     atualiza_passos()          # a configuracao manda nas teclas
@@ -5437,6 +5489,7 @@ def run_bot():
         print("Abortando: sem as barras o bot leria lixo e spammaria cura.")
         return
 
+    arquivo_log, saida_antes, erro_antes = abre_o_log()
     print(f"Bot iniciado: lendo de '{leitura.title}', teclas em '{teclado.title}'.")
     print("Ctrl+Alt+S para parar.")
     # A GRADE PRIMEIRO. Errada, ela nao da erro nenhum: so poe cada quadrado
@@ -6258,6 +6311,15 @@ def run_bot():
                 print('[stop] erros seguidos demais; parando para nao ficar chutando.')
                 break
             time.sleep(LOOP_DELAY)
+
+    # o log volta ao normal, e o arquivo fecha com o fim da cacada dentro dele
+    if arquivo_log is not None:
+        print("[log] fim da sessao")
+        sys.stdout, sys.stderr = saida_antes, erro_antes
+        try:
+            arquivo_log.close()
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
