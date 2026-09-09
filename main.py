@@ -4940,6 +4940,31 @@ def run_bot():
             # entao depois de morto nao ha como enxerga-lo. Guardar a posicao do
             # mais perto a cada leitura e o que permite ir buscar o loot depois.
             odo_agora = odo         # existe sempre agora, nos tres modos
+            if ENABLE_LOOT:
+                # A BARRA SOME NO INSTANTE DA MORTE, e a morte so e confirmada
+                # TARGET_GONE_READS leituras depois. Registrar o
+                # desaparecimento QUANDO ELE ACONTECE, e nao ir procurar
+                # depois, resolve duas coisas: o quadrado sai do momento exato
+                # da morte, e nao se perde o sinal quando outro bicho pisa no
+                # quadrado do corpo nesse meio-tempo - ali passaria a haver
+                # barra de novo e a comparacao concluiria que nada sumiu.
+                #
+                # Em coordenada de MUNDO: o personagem se move entre a morte e
+                # o saque, e offset guardado envelheceu duas vezes neste
+                # projeto.
+                agora_barras = detect_creatures(leitura)
+                mundo_agora = {
+                    (round(odo_agora.pos[0] + q[0] * MINIMAP_PX_SQM),
+                     round(odo_agora.pos[1] + q[1] * MINIMAP_PX_SQM))
+                    for q in agora_barras} if odo_agora else set()
+                antes_barras = caminho.get("barras_mundo")
+                if antes_barras is not None:
+                    for lugar in antes_barras - mundo_agora:
+                        caminho.setdefault("sumiram", []).append(
+                            (lugar, time.time()))
+                    del caminho.setdefault("sumiram", [])[:-8]
+                caminho["barras_mundo"] = mundo_agora
+
             if ENABLE_LOOT and entradas > 0:
                 tela = viewport(leitura)
                 na_tela = detect_creatures(leitura, img=tela)
@@ -5048,8 +5073,26 @@ def run_bot():
                         # sumiu ou nao - sem limiar para calibrar no ruido.
                         agora_tela = viewport(leitura)
                         na_tela_pos = detect_creatures(leitura, img=agora_tela)
-                        sumiram = barras_que_sumiram(havia, na_tela_pos,
-                                                     andado)
+                        # O REGISTRO DO INSTANTE DA MORTE vem primeiro: os
+                        # quadrados em que a barra sumiu, anotados na leitura em
+                        # que sumiram e guardados em coordenada de mundo. Sao
+                        # os mais recentes, porque a morte que se esta
+                        # confirmando agora e a ultima que aconteceu.
+                        anotados = caminho.get("sumiram") or []
+                        usa = anotados[-mortos_agora:] if anotados else []
+                        sumiram = [(round((lugar[0] - odo_agora.pos[0])
+                                          / MINIMAP_PX_SQM),
+                                    round((lugar[1] - odo_agora.pos[1])
+                                          / MINIMAP_PX_SQM))
+                                   for lugar, _t in usa] if odo_agora else []
+                        if sumiram:
+                            del caminho["sumiram"][-len(usa):]
+                        else:
+                            # sem registro (a barra nunca foi vista sumir): a
+                            # comparacao entre a leitura de referencia e a de
+                            # agora ainda pode achar
+                            sumiram = barras_que_sumiram(havia, na_tela_pos,
+                                                         andado)
                         # UM QUADRADO POR MORTE. Duas entradas podem sumir na
                         # mesma leitura - grupo todo com pouca vida - e ai sao
                         # dois corpos. A conta da trava sabe quantos foram.

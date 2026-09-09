@@ -20,6 +20,11 @@ constava. Sem chute.
 Aqui o bicho ANDA de (4,0) ate (1,0) enquanto e atacado e morre em (1,0). O
 teste exige que o corpo saia em (1,0) - onde ele morreu - e nao em (4,0), onde
 foi engajado.
+
+E ha uma variante com INTRUSO: outro bicho pisa no quadrado do corpo antes de a
+morte ser confirmada. Ali passa a haver barra de novo, e comparar a leitura de
+referencia com a de agora concluiria que nada sumiu. E por isso que o
+desaparecimento e anotado NA LEITURA EM QUE ACONTECE, e nao procurado depois.
 """
 import io
 import os
@@ -40,6 +45,12 @@ BICHO[3:8, 3:8] = (200, 30, 30)
 # o caminho do bicho: engajado longe, chega colado, morre ali
 ANDOU = [(4, 0), (3, 0), (2, 0), (1, 0)]
 MORREU_EM = ANDOU[-1]
+# um segundo bicho que, depois da morte, PISA no quadrado do corpo. A morte so
+# e confirmada TARGET_GONE_READS leituras depois de a entrada sumir, e nesse
+# meio-tempo ali passa a haver barra de novo: comparar a leitura de referencia
+# com a de agora concluiria que nada sumiu. Por isso o desaparecimento e
+# anotado NA LEITURA EM QUE ACONTECE.
+INTRUSO_EM = MORREU_EM
 
 
 def desenha(img, off, cor, tamanho=44):
@@ -93,7 +104,7 @@ class OdoFalso:
         return False
 
 
-def roda(sobrevivente):
+def roda(sobrevivente, intruso=False):
     """
     O bicho anda de (4,0) a (1,0), e atacado e morre. Devolve o que o bot achou.
 
@@ -112,9 +123,15 @@ def roda(sobrevivente):
         roteiro.append((1 + extra, engajado, 0.9 if engajado else None,
                         [BICHO] * (1 + extra), BICHO if engajado else None))
         telas.append(tela_vivo(off))
-    for _ in range(30):
+    for i in range(30):
         roteiro.append((0 + extra, False, None, [BICHO] * extra, None))
-        telas.append(tela_morto(MORREU_EM))
+        if intruso and i >= 1:
+            # o intruso chega em cima do corpo: sprite de bicho COM barra no
+            # mesmo quadrado onde o cadaver esta
+            telas.append(barra(desenha(tela_morto(MORREU_EM), INTRUSO_EM,
+                                       (170, 40, 40)), INTRUSO_EM))
+        else:
+            telas.append(tela_morto(MORREU_EM))
 
     def agora():
         return min(quadro["i"], len(roteiro) - 1)
@@ -184,20 +201,26 @@ def roda(sobrevivente):
 
 falhas = []
 print(f"o bicho anda {ANDOU[0]} -> {ANDOU[-1]} e morre em {MORREU_EM}\n")
-print(f"  {'sobrevivente':<14} {'corpo marcado':<15} onde foi ENGAJADO")
-for sobrevivente in (False, True):
-    r = roda(sobrevivente)
-    print(f"  {str(sobrevivente):<14} {str(r['marcado']):<15} {ANDOU[0]}")
+print(f"  {'sobrevivente':<14} {'intruso':<9} {'corpo marcado':<15} "
+      f"onde foi ENGAJADO")
+for sobrevivente, intruso in ((False, False), (True, False),
+                              (False, True), (True, True)):
+    r = roda(sobrevivente, intruso)
+    print(f"  {str(sobrevivente):<14} {str(intruso):<9} "
+          f"{str(r['marcado']):<15} {ANDOU[0]}")
+    rotulo = f"sobrevivente={sobrevivente}, intruso={intruso}"
     if r["marcado"] != MORREU_EM:
         falhas.append(
-            f"sobrevivente={sobrevivente}: marcou {r['marcado']}, esperava "
-            f"{MORREU_EM} (onde ele MORREU). {ANDOU[0]} e onde ele foi "
-            f"ENGAJADO - se saiu isso, a leitura de referencia esta velha")
+            f"{rotulo}: marcou {r['marcado']}, esperava {MORREU_EM} (onde ele "
+            f"MORREU). {ANDOU[0]} e onde ele foi ENGAJADO - se saiu isso, a "
+            f"leitura de referencia esta velha; None significa que o "
+            f"desaparecimento da barra nao foi registrado")
     if not r["cliques"]:
-        falhas.append(f"sobrevivente={sobrevivente}: nao clicou em corpo nenhum")
+        falhas.append(f"{rotulo}: nao clicou em corpo nenhum")
 
 # o quadrado do engajamento nao pode aparecer como corpo em nenhum momento
-todos_logs = "".join(roda(s)["log"] for s in (False, True))
+todos_logs = "".join(roda(s, i)["log"]
+                    for s in (False, True) for i in (False, True))
 if f"sumiu em [{ANDOU[0]}" in todos_logs:
     falhas.append(f"o log aponta corpo em {ANDOU[0]}, que e onde o bicho foi "
                   f"engajado e nao onde morreu")

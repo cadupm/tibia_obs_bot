@@ -110,6 +110,19 @@ A comparação de imagem ficou como **reserva**, para quando nenhuma barra sumiu
 tela — o bicho morreu fora dela, ou a leitura de referência não o pegou. O log
 diz qual dos dois decidiu.
 
+**O desaparecimento é anotado na leitura em que acontece**, e não procurado
+depois. A barra some no *instante* da morte, mas a morte só é confirmada
+`TARGET_GONE_READS` leituras depois — e nesse meio-tempo outro bicho pode pisar
+no quadrado do corpo. Ali passa a haver barra de novo, e comparar a leitura de
+referência com a de agora concluiria que **nada sumiu**. Medido: com um intruso
+em cima do corpo, a comparação tardia perde o sinal por completo; o registro no
+instante devolve o quadrado certo.
+
+O registro é em coordenada de **mundo** (odômetro + offset), porque o personagem
+se move entre a morte e o saque — offset guardado já envelheceu duas vezes neste
+projeto. A comparação tardia continua existindo como reserva, para quando a
+barra nunca foi vista sumir.
+
 **A leitura de referência é a última em que ele ainda constava da lista**, achada
 pela **contagem de entradas** e não por um número fixo de leituras atrás. Era
 `historico[-(TARGET_GONE_READS + 1)]` — um chute. Com bicho sobrevivente na
