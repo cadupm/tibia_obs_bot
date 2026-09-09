@@ -4389,12 +4389,30 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
         return False
 
     corpo = corpos[0]
-    # O PRAZO CONTA DE QUANDO O BOT COMECOU NESTE CORPO, e nao da morte. Contado
-    # da morte, uma briga de tres bichos condenava os dois ultimos: eles morrem
-    # no mesmo instante e o prazo deles vencia enquanto o primeiro era saqueado.
-    # Medido: de tres corpos na fila, um era largado sem receber um clique.
-    if corpo.get("comecou") is None:
-        corpo["comecou"] = agora
+    # O PRAZO CONTA O TEMPO TENTANDO CHEGAR, e nao o relogio de parede.
+    #
+    # Ja contou da morte, e uma briga de tres bichos condenava os dois ultimos:
+    # eles morrem no mesmo instante e o prazo deles vencia enquanto o primeiro
+    # era saqueado. Medido: de tres corpos na fila, um era largado sem receber
+    # um clique.
+    #
+    # Depois passou a contar da primeira tentativa - melhor, e ainda errado do
+    # mesmo jeito: BRIGA NO MEIO DO CAMINHO nao e tempo tentando chegar. Bicho
+    # novo aparece, o bot para de saquear e luta (e esta certo: clique no mapa
+    # troca chase por stand no cliente, e parado em cima do corpo com bicho do
+    # lado o personagem apanha de graca) - mas o prazo corria durante a briga
+    # inteira e o corpo era largado ao voltar. Medido: corpo a 2 SQM
+    # descartado com "desisto dele", sem nunca ter recebido um clique.
+    #
+    # O que se soma e o tempo entre leituras CONSECUTIVAS em que o bot esteve
+    # neste corpo. Briga no meio abre um buraco na contagem de leituras, e
+    # buraco nao entra na soma. E contagem de leituras, nao de segundos: nao ha
+    # limiar de tempo para calibrar.
+    leitura_n = estado.get("leituras", 0)
+    if (corpo.get("na_leitura") is not None
+            and leitura_n - corpo["na_leitura"] <= 2):
+        corpo["gasto"] = corpo.get("gasto", 0.0) + (agora - corpo["quando"])
+    corpo["na_leitura"], corpo["quando"] = leitura_n, agora
     onde = onde_esta_o_corpo(corpo, odo)
     distancia = max(abs(onde[0]), abs(onde[1]))
 
@@ -4409,8 +4427,8 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
         # alcance com a varredura comecada prendia o bot para sempre, porque
         # loot() devolvendo True SEGURA A ROTA. Cacada morta sem uma linha de
         # erro.
-        if time.time() - corpo["comecou"] > LOOT_PRAZO:
-            print(f"[loot] {LOOT_PRAZO:.0f}s tentando chegar no corpo a "
+        if corpo.get("gasto", 0.0) > LOOT_PRAZO:
+            print(f"[loot] {corpo['gasto']:.0f}s tentando chegar no corpo a "
                   f"{distancia:.0f} SQM; desisto dele"
                   + (f" e vou no proximo ({len(corpos) - 1} na fila)"
                      if len(corpos) > 1 else " e sigo a rota"))

@@ -363,11 +363,28 @@ o log diz quando libera com entrada ainda na lista. A rota continua exigindo a
 lista limpa de verdade: saquear o corpo do lado não puxa monstro, mas sair
 andando o cave com bicho na lista puxa.
 
-**O prazo conta de quando o bot chega naquele corpo**, não da morte. Contado da
-morte, uma briga de três bichos condenava os dois últimos: eles morrem no mesmo
-instante e o prazo deles vencia enquanto o primeiro era saqueado. Medido: de três
-corpos na fila, um era largado sem receber um clique. Passado `LOOT_VALIDADE`
-desde a morte o corpo é largado sem tentativa — ele ficou para trás na rota.
+**O prazo conta o tempo TENTANDO CHEGAR**, e não o relógio de parede. Ele já
+contou da morte, e uma briga de três bichos condenava os dois últimos: eles
+morrem no mesmo instante e o prazo deles vencia enquanto o primeiro era
+saqueado. Medido: de três corpos na fila, um era largado sem receber um clique.
+
+Contar da primeira tentativa foi melhor e continuava errado do mesmo jeito, e
+apareceu em caçada: *"tá indo saquear mas se encontra outro bicho ele para e
+ataca, não continua o saque"*. **Briga no meio do caminho não é tempo tentando
+chegar.** Parar e lutar está certo — clique no mapa troca *chase* por *stand* no
+cliente, e parado em cima do corpo com bicho do lado o personagem apanha de
+graça. O errado era o prazo correr durante a briga inteira e o corpo ser
+descartado ao voltar. Medido: corpo **a 2 SQM** largado com `desisto dele`, sem
+nunca ter recebido um clique.
+
+O que se soma é o tempo entre leituras **consecutivas** em que o bot esteve
+naquele corpo. Briga no meio abre um buraco na contagem de leituras, e buraco
+não entra na soma — é contagem de leituras, não um limiar de segundos para
+calibrar. Depois: os dois corpos saqueados, nenhuma desistência.
+
+Passado `LOOT_VALIDADE` desde a morte o corpo é largado sem tentativa — ele
+ficou para trás na rota. Esse continua no relógio de parede, de propósito: é o
+fim de linha, não o prazo da tentativa.
 
 Não pegou nada na caçada? Dois diagnósticos, para perguntas diferentes:
 
@@ -786,6 +803,15 @@ O código está comentado com o *porquê* de cada uma delas.
   invariante: quatro bichos, a moldura passando adiante, e a exigência de que
   cada morte seja detectada quando a lista **não** esvazia.
 
+- **Prazo medido no relógio de parede cobra do bot o tempo em que ele não
+  estava tentando.** `LOOT_PRAZO` é "o tempo de chegar no corpo", e a briga que
+  aparece no meio do caminho consumia esse prazo inteiro sem que um passo fosse
+  dado atrás do corpo. Duas versões erradas pelo mesmo motivo: primeiro contado
+  da morte, depois da primeira tentativa. O que o prazo quer medir é **esforço
+  gasto**, e esforço se conta por leituras consecutivas em que o bot esteve
+  naquele corpo — buraco na contagem é tempo em que ele estava fazendo outra
+  coisa.
+
 - **Um sinal discreto ainda pode ter mais de uma causa.** "Bicho morto perde a
   barra de vida" é um fato do cliente, e resolveu a localização do corpo. Só que
   a recíproca não vale: barra também deixa de estar num quadrado quando o bicho
@@ -942,6 +968,7 @@ python testes/testa_corpo_onde_morreu.py  # o corpo sai onde ele morreu, não on
 python testes/testa_loot_precisao.py  # a aproximação cai no pixel do quadrado, sem escala
 python testes/testa_loot_quatro.py    # 4 bichos, 3 marcados: os 3 corpos são pegos
 python testes/testa_loot_movimento.py # barra que andou não entra como morte
+python testes/testa_loot_interrompido.py  # briga no meio não custa o corpo
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI
