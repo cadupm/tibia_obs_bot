@@ -172,6 +172,13 @@ class FilaDeSaida:
 
 MARK_ICON_ZOOM = 3              # o desenho da marca tem 13px; 3x fica legivel
 ALTURA_BARRAS = 20              # px do topo da tela ocupados pelas barras
+MARGEM_TELA = 110               # px reservados para barra de titulo, barra de
+                                # tarefas e as folgas do grid. A janela nao pode
+                                # passar da tela: a aba Combate cresceu com
+                                # Kite, Paralisia e Loot, e a lista "Monstros
+                                # para atacar" caia abaixo do corte - sem rolar,
+                                # nao havia como chegar nela.
+ROLA_PASSO = 3                  # linhas por clique da roda do mouse
 
 
 class Painel:
@@ -207,7 +214,7 @@ class Painel:
 
     # ------------------------------------------------------------- cabecalho
     def _monta_cabecalho(self):
-        topo = ttk.Frame(self.raiz)
+        topo = self.cabecalho = ttk.Frame(self.raiz)
         topo.grid(row=0, column=0, padx=10, pady=(10, 4), sticky="ew")
         topo.columnconfigure(0, weight=1)
         topo.columnconfigure(1, weight=0)
@@ -240,9 +247,9 @@ class Painel:
     def _monta_abas(self):
         notas = self.notas = ttk.Notebook(self.raiz)
         notas.grid(row=1, column=0, padx=10, pady=4, sticky="ew")
+        self.telas = []            # os canvas das abas, para limitar a altura
         for nome, blocos in ABAS:
-            aba = ttk.Frame(notas)
-            notas.add(aba, text=nome)
+            aba = self._aba_rolavel(notas, nome)
             linha = 0
             for titulo, interruptor, campos in blocos:
                 linha = self._monta_bloco(aba, linha, titulo, interruptor, campos)
@@ -252,6 +259,90 @@ class Painel:
                 self._monta_monstros(aba, linha)
             if nome == "Rota":
                 self._monta_rota(aba, linha)
+        self.raiz.after_idle(self._ajusta_altura)
+
+    def _aba_rolavel(self, notas, nome):
+        """
+        Uma aba que ROLA. Devolve o frame onde os blocos entram.
+
+        As abas eram frames direto no notebook e a janela crescia com o
+        conteudo: a Combate ganhou Kite, Paralisia e Loot e passou da altura da
+        tela, deixando "Monstros para atacar" abaixo do corte, sem jeito de
+        chegar nele. Agora cada aba e um canvas com barra de rolagem.
+        """
+        fora = ttk.Frame(notas)
+        notas.add(fora, text=nome)
+        fora.rowconfigure(0, weight=1)
+        fora.columnconfigure(0, weight=1)
+
+        tela = tk.Canvas(fora, highlightthickness=0, borderwidth=0)
+        tela.grid(row=0, column=0, sticky="nsew")
+        barra = ttk.Scrollbar(fora, orient="vertical", command=tela.yview)
+        barra.grid(row=0, column=1, sticky="ns")
+        tela.configure(yscrollcommand=barra.set)
+
+        dentro = ttk.Frame(tela)
+        janela = tela.create_window((0, 0), window=dentro, anchor="nw")
+
+        def redimensiona(_evento=None):
+            tela.configure(scrollregion=tela.bbox("all"))
+            # o conteudo acompanha a largura do canvas, senao os blocos com
+            # sticky="ew" ficam com a largura minima
+            tela.itemconfigure(janela, width=tela.winfo_width())
+
+        dentro.bind("<Configure>", redimensiona)
+        tela.bind("<Configure>", redimensiona)
+        tela.bind("<Enter>", lambda _e: self._liga_roda(tela))
+        tela.bind("<Leave>", lambda _e: self._desliga_roda())
+        self.telas.append((tela, dentro, barra))
+        return dentro
+
+    # ---------------------------------------------------- roda do mouse
+    def _liga_roda(self, tela):
+        self._tela_da_roda = tela
+        # bind_all porque o ponteiro fica sobre os filhos (labels, entries), e
+        # binding no canvas nao pega evento de filho
+        self.raiz.bind_all("<MouseWheel>", self._roda)
+
+    def _desliga_roda(self):
+        self._tela_da_roda = None
+        self.raiz.unbind_all("<MouseWheel>")
+
+    def _roda(self, evento):
+        tela = getattr(self, "_tela_da_roda", None)
+        if tela is None:
+            return
+        # quem rola sozinho fica com a roda: a lista de monstros e a arvore da
+        # rota tem rolagem propria, e rolar a aba junto embaralhava as duas
+        alvo = self.raiz.winfo_containing(evento.x_root, evento.y_root)
+        while alvo is not None and alvo is not tela:
+            if alvo.winfo_class() in ("Treeview", "Text", "Listbox"):
+                return
+            alvo = getattr(alvo, "master", None)
+        tela.yview_scroll(-ROLA_PASSO if evento.delta > 0 else ROLA_PASSO,
+                          "units")
+
+    def _ajusta_altura(self):
+        """
+        Corta a altura das abas no que cabe na tela.
+
+        Todas ficam com a MESMA altura - a do maior conteudo, limitada pela
+        tela - para a janela nao pular de tamanho ao trocar de aba. A barra de
+        rolagem so aparece na aba que precisa dela.
+        """
+        self.raiz.update_idletasks()
+        sobra = (self.raiz.winfo_screenheight() - ALTURA_BARRAS - 40
+                 - self.cabecalho.winfo_reqheight()
+                 - self.log.master.winfo_reqheight() - MARGEM_TELA)
+        maior = max(d.winfo_reqheight() for _t, d, _b in self.telas)
+        altura = max(min(maior, sobra), 200)
+        for tela, dentro, barra in self.telas:
+            tela.configure(height=altura)
+            if dentro.winfo_reqheight() <= altura:
+                barra.grid_remove()       # aba que cabe nao mostra barra
+            else:
+                barra.grid()
+        self.raiz.update_idletasks()
 
     def _monta_bloco(self, aba, linha, titulo, interruptor, campos):
         quadro = ttk.LabelFrame(aba, text=titulo)
@@ -570,12 +661,16 @@ class Painel:
 
         acoes = ttk.Frame(col)
         acoes.grid(row=2, column=0, sticky="w")
-        ttk.Button(acoes, text="Adicionar nome", width=16,
+        # ROTULOS QUE NAO PROMETEM O QUE NAO ENTREGAM. "Adicionar nome"
+        # cadastra o nome e nada mais - quem reconhece o bicho e o sprite, e sem
+        # ele o monstro nao e atacado. Lido como "adicionar monstro", o botao
+        # parecia nao funcionar: fazia o que dizia, e nao o que se esperava.
+        ttk.Button(acoes, text="1. So o nome", width=16,
                    command=self.adicionar_monstro).grid(row=0, column=0, pady=1)
         ttk.Button(acoes, text="Renomear", width=11,
                    command=self.renomear_monstro).grid(row=0, column=1,
                                                        padx=(4, 0), pady=1)
-        ttk.Button(acoes, text="Aprender da linha", width=16,
+        ttk.Button(acoes, text="2. Pegar o sprite", width=16,
                    command=self.aprender_monstro).grid(row=1, column=0, pady=1)
         canto = ttk.Frame(acoes)
         canto.grid(row=1, column=1, padx=(4, 0), pady=1, sticky="w")
@@ -585,12 +680,23 @@ class Painel:
         ttk.Button(canto, text="Remover", width=8,
                    command=self.remover_monstro).grid(row=0, column=1, padx=(3, 0))
 
+        # O RECADO FICA AQUI, e nao so no log: o log e de poucas linhas e a
+        # explicacao rolava para fora antes de ser lida.
+        self.lbl_monstro = ttk.Label(quadro, text="", foreground="#a70",
+                                     wraplength=430, justify="left")
+        self.lbl_monstro.grid(row=5, column=0, columnspan=3, sticky="w",
+                              padx=6, pady=(4, 0))
         self.lbl_filtro = ttk.Label(quadro, text="", foreground="#777")
-        self.lbl_filtro.grid(row=5, column=0, columnspan=3, sticky="w",
+        self.lbl_filtro.grid(row=6, column=0, columnspan=3, sticky="w",
                              padx=6, pady=(2, 0))
-        ttk.Label(quadro, text="nome sozinho nao filtra: quem reconhece e o sprite",
-                  foreground="#777").grid(row=6, column=0, columnspan=3,
-                                          sticky="w", padx=6, pady=(0, 4))
+        ttk.Label(quadro, wraplength=430, justify="left", foreground="#777",
+                  text="Duas etapas: (1) cadastra o nome, (2) com o bicho "
+                       "ENGAJADO no jogo, pega o sprite da linha escolhida da "
+                       "battle list. So o sprite reconhece - nome sozinho nao "
+                       "filtra nada, porque a leitura e de pixel."
+                  ).grid(row=7, column=0, columnspan=3, sticky="w", padx=6,
+                         pady=(2, 4))
+        self._dica_monstro()
 
     def _monta_autocast(self, aba, linha):
         """
@@ -626,12 +732,25 @@ class Painel:
                                           pady=(2, 4))
 
     def _monta_log(self):
+        """
+        O log, com barra de rolagem.
+
+        Era um Text de 6 linhas sem barra: mensagem que passava estava perdida
+        para sempre, e as explicacoes do bot sao longas (a de cadastrar monstro
+        sem sprite ocupa tres linhas sozinha). Sem poder rolar para tras, o
+        painel escondia a resposta a pergunta que o usuario acabara de fazer.
+        """
         quadro = ttk.LabelFrame(self.raiz, text="Log")
         quadro.grid(row=2, column=0, padx=10, pady=(4, 10), sticky="ew")
-        self.log = tk.Text(quadro, height=6, width=76, state="disabled",
-                           font=("Consolas", 9), background="#1e1e1e",
-                           foreground="#d4d4d4", relief="flat")
-        self.log.grid(row=0, column=0, padx=2, pady=2)
+        quadro.columnconfigure(0, weight=1)
+        self.log = tk.Text(quadro, height=8, width=74, state="disabled",
+                           wrap="word", font=("Consolas", 9),
+                           background="#1e1e1e", foreground="#d4d4d4",
+                           relief="flat")
+        self.log.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+        barra = ttk.Scrollbar(quadro, orient="vertical", command=self.log.yview)
+        barra.grid(row=0, column=1, sticky="ns", pady=2)
+        self.log.configure(yscrollcommand=barra.set)
 
     # ------------------------------------------------------------- estado UI
     def _atualiza_habilitacao(self):
@@ -660,6 +779,31 @@ class Painel:
         for nome in sorted(self.monstros):
             marca = "" if self.monstros[nome] is not None else "  (sem sprite)"
             self.lista_monstros.insert("end", nome + marca)
+        # o recado sai daqui para valer em TODA acao (aprender, renomear,
+        # remover) e nao so ao cadastrar. Na montagem do painel o rotulo ainda
+        # nao existe.
+        if hasattr(self, "lbl_monstro"):
+            self._dica_monstro()
+
+    def _dica_monstro(self, recado=None):
+        """
+        Diz, no proprio bloco, qual e o proximo passo.
+
+        Cadastrar o nome nao faz o bicho ser atacado, e essa frase vivia so no
+        log - onde some. Aqui ela fica na tela ate deixar de ser verdade.
+        """
+        if recado is None:
+            pendentes = [n for n, sp in self.monstros.items() if sp is None]
+            if not self.monstros:
+                recado = ("lista vazia: cadastre o nome e depois pegue o sprite "
+                          "com o bicho engajado")
+            elif pendentes:
+                recado = (f"{len(pendentes)} sem sprite ({', '.join(pendentes[:3])}"
+                          f"{'...' if len(pendentes) > 3 else ''}): esses NAO sao "
+                          f"atacados. Engaje o bicho e use '2. Pegar o sprite'")
+            else:
+                recado = ""
+        self.lbl_monstro.config(text=recado)
 
     def _nome_selecionado(self):
         sel = self.lista_monstros.curselection()
@@ -706,8 +850,18 @@ class Painel:
         # aqui, mudar as diagonais no painel deixava o bot decidindo por uma
         # tecla nova e consultando a tabela velha - KeyError no meio da cacada
         main.atualiza_passos()
-        for aviso in self.avisos():
-            self.escreve_log("[aviso] " + aviso)
+        # AVISO NAO SE REPETE. O aplicar() roda em Salvar, Iniciar, Aprender e
+        # ao carregar a config, e cada chamada reimprimia a lista inteira de
+        # avisos. Num log de poucas linhas, oito copias do mesmo aviso empurram
+        # para fora justamente a mensagem que explica o que acabou de
+        # acontecer - foi assim que "cadastrei o nome, e agora?" virou "nao
+        # consigo adicionar monstro". Condicao que continua igual nao merece
+        # linha nova.
+        agora = tuple(self.avisos())
+        if agora != getattr(self, "_avisos_ditos", None):
+            for aviso in agora:
+                self.escreve_log("[aviso] " + aviso)
+            self._avisos_ditos = agora
 
     def avisos(self):
         """
@@ -822,6 +976,10 @@ class Painel:
         self.nome_monstro.set("")
         self._recarrega_monstros()
         self._atualiza_habilitacao()
+        self._dica_monstro(f"'{nome}' cadastrado SEM SPRITE, e por isso ainda "
+                           f"nao sera atacado. Agora engaje esse bicho no jogo, "
+                           f"escolha a linha dele na battle list e clique "
+                           f"'2. Pegar o sprite'.")
 
     def aprender_monstro(self):
         """Liga o sprite da linha escolhida da battle list a um nome."""

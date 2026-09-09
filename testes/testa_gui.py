@@ -1,0 +1,125 @@
+# -*- coding: utf-8 -*-
+"""O painel cabe na tela e da para chegar em tudo dentro dele.
+
+Este teste existe porque a falha foi silenciosa: a aba Combate ganhou Kite,
+Paralisia e Loot, a janela passou da altura da tela e o bloco "Monstros para
+atacar" ficou abaixo do corte, sem barra de rolagem - sem erro, sem log, sem
+nada. A GUI abria bonita e faltava metade.
+
+O que se mede aqui:
+  - a janela nao passa da borda de baixo da tela;
+  - conteudo maior que a aba ganha barra de rolagem;
+  - rolando ate o fim, o ULTIMO bloco de cada aba fica visivel;
+  - a roda do mouse rola a aba, mas NAO quando o ponteiro esta sobre um widget
+    que rola sozinho (a lista de monstros, a arvore da rota) - senao as duas
+    rolagens brigam.
+
+Precisa de um ambiente com tela (tkinter). Sem isso, PULA.
+"""
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))          # acha o gui.py
+import tkinter as tk
+
+try:
+    _raiz = tk.Tk()
+except tk.TclError as erro:
+    print(f"PULADO: sem tela para abrir janela ({erro})")
+    print("VEREDITO: PULADO - a GUI precisa de um ambiente grafico")
+    raise SystemExit(0)
+
+import gui
+
+painel = gui.Painel(_raiz)
+_raiz.update_idletasks()
+_raiz.update()
+_raiz.update_idletasks()
+
+falhas = []
+tela_h = _raiz.winfo_screenheight()
+topo = gui.ALTURA_BARRAS + 40
+alto = _raiz.winfo_reqheight()
+print(f"tela {_raiz.winfo_screenwidth()}x{tela_h} | janela "
+      f"{_raiz.winfo_reqwidth()}x{alto} em y={topo} -> borda de baixo em "
+      f"{topo + alto}")
+if topo + alto > tela_h:
+    falhas.append(f"a janela passa da tela: borda em {topo + alto}, tela tem "
+                  f"{tela_h}. O que sobra embaixo fica inalcancavel")
+
+print()
+for indice, (nome, _blocos) in enumerate(gui.ABAS):
+    canvas, dentro, barra = painel.telas[indice]
+    painel.notas.select(indice)
+    _raiz.update_idletasks()
+    _raiz.update()
+    precisa, cabe = dentro.winfo_reqheight(), canvas.winfo_height()
+    rola = precisa > cabe
+    tem_barra = bool(barra.winfo_ismapped())
+    print(f"  {nome:<9} conteudo {precisa:>4}px em {cabe:>4}px "
+          f"-> {'rola' if rola else 'cabe inteiro'}, "
+          f"barra {'sim' if tem_barra else 'nao'}")
+    if rola and not tem_barra:
+        falhas.append(f"aba {nome}: conteudo de {precisa}px em {cabe}px e "
+                      f"nenhuma barra de rolagem")
+
+    # o ultimo bloco da aba fica alcancavel rolando ate o fim?
+    filhos = [w for w in dentro.winfo_children() if w.winfo_ismapped()]
+    if filhos:
+        canvas.yview_moveto(1.0)
+        _raiz.update_idletasks()
+        ultimo = filhos[-1]
+        y = ultimo.winfo_rooty() - canvas.winfo_rooty()
+        visivel = -2 <= y < cabe
+        print(f"            ultimo bloco a {y}px do topo depois de rolar "
+              f"-> {'visivel' if visivel else 'FORA DA VISTA'}")
+        if not visivel:
+            falhas.append(f"aba {nome}: rolando ate o fim, o ultimo bloco "
+                          f"ainda fica em y={y} (visivel e 0..{cabe})")
+        canvas.yview_moveto(0.0)
+        _raiz.update_idletasks()
+
+# ------------------------------------------------- a roda do mouse
+def roda(canvas, sobre):
+    canvas.yview_moveto(0.35)
+    _raiz.update_idletasks()
+    antes = canvas.yview()[0]
+    painel._liga_roda(canvas)
+    painel._roda(type("E", (), {"delta": -120,
+                                "x_root": sobre.winfo_rootx() + 5,
+                                "y_root": sobre.winfo_rooty() + 5})())
+    _raiz.update_idletasks()
+    return antes, canvas.yview()[0]
+
+print()
+combate = painel.telas[1][0]
+painel.notas.select(1)
+_raiz.update_idletasks()
+_raiz.update()
+antes, depois = roda(combate, combate)
+print(f"roda sobre area comum da Combate: {antes:.3f} -> {depois:.3f}")
+if depois == antes:
+    falhas.append("a roda do mouse nao rola a aba")
+
+for atributo, rotulo in (("lista_monstros", "lista de monstros"),
+                         ("lista_rota", "arvore da rota")):
+    widget = getattr(painel, atributo, None)
+    if widget is None:
+        falhas.append(f"nao achei o widget {atributo} para testar a roda")
+        continue
+    painel.notas.select(1 if atributo == "lista_monstros" else 2)
+    _raiz.update_idletasks()
+    _raiz.update()
+    canvas = painel.telas[1 if atributo == "lista_monstros" else 2][0]
+    antes, depois = roda(canvas, widget)
+    parou = abs(depois - antes) < 1e-6
+    print(f"roda sobre a {rotulo} ({widget.winfo_class()}): "
+          f"{antes:.3f} -> {depois:.3f} "
+          f"-> {'a aba ficou parada' if parou else 'ROLOU A ABA JUNTO'}")
+    if not parou:
+        falhas.append(f"a roda sobre a {rotulo} rolou a aba junto: quem tem "
+                      f"rolagem propria fica com a roda, senao as duas brigam")
+
+_raiz.destroy()
+print("\nVEREDITO:", "OK - o painel cabe na tela e tudo dentro dele e alcancavel"
+      if not falhas else "FALHOU: " + "; ".join(falhas))
