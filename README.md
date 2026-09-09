@@ -164,10 +164,28 @@ não anda: quem anda é o personagem, e offset guardado envelhece a cada passo.
 Corrigir esse envelhecimento a cada leitura foi a origem de dois bugs seguidos.
 Posição absoluta não precisa de correção: a conta é sempre a mesma subtração.
 
-**Por que esperar a battle list limpar**, em vez de saquear a cada morte: no
-cliente, clique no mapa ou na tela durante o ataque troca o modo de luta de
-*chase* para *stand*; parado em cima do corpo com bicho vivo em volta o
-personagem apanha de graça; e corpo no Tibia dura minutos, então não há pressa.
+**Por que esperar**, em vez de saquear a cada morte: no cliente, clique no mapa
+ou na tela durante o ataque troca o modo de luta de *chase* para *stand*; parado
+em cima do corpo com bicho vivo em volta o personagem apanha de graça; e corpo no
+Tibia dura minutos, então não há pressa.
+
+**Mas esperar a battle list VAZIA travava o saque para sempre** quando um bicho
+fugia da tela: a entrada dele não sai da lista enquanto ele estiver vivo, e o
+corpo do que morreu envelhecia no chão até vencer `LOOT_VALIDADE`. Tirado de um
+log de caçada:
+
+```
+[loot] bicho morreu a -4,-5 SQM; 1 corpo(s) na fila
+[kite] 1 na battle list e nenhum bicho na tela: correu para fora do alcance
+```
+
+O corpo foi marcado certo e o saque nunca aconteceu. As três razões de esperar
+valem para bicho **perto**, não para entrada na lista: um bicho fora da tela está
+a mais de 7 SQM de lado ou 5 de altura — não alcança o personagem e não está
+sendo atacado. Agora o que segura o saque é **bicho na tela ou alvo engajado**, e
+o log diz quando libera com entrada ainda na lista. A rota continua exigindo a
+lista limpa de verdade: saquear o corpo do lado não puxa monstro, mas sair
+andando o cave com bicho na lista puxa.
 
 **O prazo conta de quando o bot chega naquele corpo**, não da morte. Contado da
 morte, uma briga de três bichos condenava os dois últimos: eles morrem no mesmo
@@ -611,6 +629,7 @@ python testes/testa_loot_no_laco.py   # o loot no laço inteiro: morreu -> marco
 python testes/testa_loot_modos.py     # o mesmo saque em stand/chase/kite, com e sem rota
 python testes/testa_acha_corpo.py     # acha o quadrado do corpo na tela, e admite quando não dá
 python testes/testa_loot_grupo.py     # três bichos: grava os três corpos, recolhe depois da briga
+python testes/testa_loot_fugitivo.py  # bicho que fugiu da tela não trava o saque do que morreu
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI

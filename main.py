@@ -4804,8 +4804,29 @@ def run_bot():
             # leitura ruim no meio da briga nao pode virar clique. Vem antes da
             # rota - sair andando com o corpo no chao e deixar o profit para
             # tras. Corpo no Tibia dura minutos, entao esperar nao custa nada.
-            limpo = 0 if lutando else limpo + 1
-            if not lutando and limpo >= WALK_RESUME_READS:
+            # BICHO LONGE NAO IMPEDE O SAQUE. Esperar a battle list VAZIA
+            # travava o loot indefinidamente quando um bicho fugia da tela: a
+            # entrada dele continua na lista, e o corpo do que morreu envelhece
+            # no chao ate vencer LOOT_VALIDADE. Medido num log de cacada:
+            #   [loot] bicho morreu a -4,-5 SQM; 1 corpo(s) na fila
+            #   [kite] 1 na battle list e nenhum bicho na tela
+            # e o saque nunca aconteceu.
+            #
+            # As tres razoes de esperar valem para bicho PERTO, e nao para
+            # entrada na lista: clique na tela durante o ataque troca chase por
+            # stand; parado em cima do corpo com bicho do lado o personagem
+            # apanha de graca; e o alvo engajado nao se abandona. Bicho fora da
+            # tela esta a mais de 7 SQM de lado ou 5 de altura - nao alcanca o
+            # personagem e nao esta sendo atacado.
+            na_tela_agora = detect_creatures(leitura) if (
+                ENABLE_LOOT and entradas > 0 and not alvo) else []
+            perto_de_bicho = lutando and (bool(alvo) or bool(na_tela_agora)
+                                          or entradas == 0)
+            if lutando and not perto_de_bicho and limpo == 0:
+                print(f"[loot] {entradas} na battle list, mas nenhum bicho na "
+                      f"tela e nenhum engajado: dou o saque por liberado")
+            limpo = 0 if perto_de_bicho else limpo + 1
+            if not perto_de_bicho and limpo >= WALK_RESUME_READS:
                 if loot(leitura, teclado, caminho, loot_cd, odo):
                     time.sleep(LOOP_DELAY)
                     continue
@@ -4826,6 +4847,9 @@ def run_bot():
                 # leituras seguidas - a mesma carencia do loot, contada logo
                 # acima. Perder meio segundo aqui e barato; trocar o modo de
                 # luta do personagem, nao.
+                # A ROTA e mais exigente que o saque: ela continua esperando
+                # a lista LIMPA. Saquear o corpo do lado nao puxa monstro, mas
+                # sair andando o cave com bicho ainda na lista puxa.
                 if not lutando and limpo >= WALK_RESUME_READS:
                     if parou_por_bicho:
                         print(f"[walk] battle list limpa por {limpo} leituras, "
