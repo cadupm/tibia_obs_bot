@@ -108,7 +108,23 @@ pelo mais perto do palpite (`LOOT_DIFF_MARGEM` decide o que conta como empate).
 
 Os números reais aparecem no log de cada morte (`mudou N por pixel, segundo M`)
 — é por eles que se calibra o limiar na sua caverna, já que os meus vêm de
-cenário sintético.
+cenário sintético. E os de uma caçada de verdade foram reveladores: **14 contra
+12**, **16 contra 12**, **39 contra 37**. O vencedor mal passa do limiar e mal
+passa do segundo, ou seja a comparação de tela quase não decide nada numa
+caverna real — o que faz o desempate pelo palpite ser a decisão de fato, e é bom
+que seja, porque o palpite é uma posição **medida** de barra de vida, não uma
+diferença no meio do ruído.
+
+**O `--kite` calibra `CREATURE_BAR_ABOVE` sozinho.** O bot converte a posição da
+barra de vida no quadrado da criatura somando essa constante; errada por um,
+**toda** posição sai errada por um quadrado em y e o loot clica ao lado. No log
+daquela caçada, o palpite e a escolha discordavam sempre em y, sempre por 1,
+nunca em x — a assinatura exata desse erro.
+
+Não há por que adivinhar o valor: o personagem está **sempre** no quadrado do
+meio da tela, e o cliente desenha barra sobre ele. Passada pela mesma conversão,
+a barra dele tem de cair em `(0, 0)`; caindo em `(0, -1)`, a constante está um a
+menos. O `--kite` mede isso a cada leitura e no fim diz o valor a usar.
 
 Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): sem *classic control* o clique
 direito abre menu de contexto, que fica na frente e engole o que vier depois.
@@ -536,6 +552,13 @@ O código está comentado com o *porquê* de cada uma delas.
   procurava o corpo só no quadrado do palpite, justamente o erro que a busca
   existe para corrigir. Um teste guarda a distinção; o resto foi removido.
 
+- **Falar uma coisa e fazer outra é pior do que errar.** `acha_o_corpo` e
+  `acha_os_corpos` liam a mesma pontuação e decidiam diferente: o primeiro
+  desempata pelo mais perto do palpite quando as notas estão juntas, o segundo
+  pegava só o máximo cru. Num log de caçada com **39 contra 37**, o log dizia
+  "corpo em (0,-1)" — a escolha com desempate — e o bot ia marcar (1,-1), o
+  máximo. Não dá para depurar um bot que não conta o que faz.
+
 - **Config salva vence o código; formulário aberto vence o arquivo.** Corrigi um
   valor estragado direto no `config.json` com o painel aberto, e o próximo
   *Salvar config* escreveu o valor velho de volta — o formulário em memória não
@@ -717,6 +740,7 @@ python testes/testa_acha_corpo.py     # acha o quadrado do corpo na tela, e admi
 python testes/testa_loot_grupo.py     # três bichos: grava os três corpos, recolhe depois da briga
 python testes/testa_loot_fugitivo.py  # bicho que fugiu da tela não trava o saque do que morreu
 python testes/testa_loot_escolhido.py # ataca todos, saqueia só os escolhidos
+python testes/testa_calibra_barra.py  # a barra do personagem calibra a conversão barra->quadrado
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI

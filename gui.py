@@ -151,6 +151,10 @@ ABAS = [
             ("LOOT_VALIDADE", "Largar corpo mais velho que", float,
              "segundos: o de tras na rota nao vale a viagem"),
         ]),
+        ("Onde o bicho esta na tela", None, [
+            ("CREATURE_BAR_ABOVE", "Criatura abaixo da barra", int,
+             "quadrados; meca com --kite, que calibra sozinho"),
+        ]),
         ("Achar o corpo na tela", "LOOT_ACHA_CORPO", [
             ("LOOT_SO_SE_ACHOU", "Largar se nao achar", bool,
              "desligado: clica no palpite, que e melhor que nao agir"),

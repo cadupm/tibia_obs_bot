@@ -3164,14 +3164,44 @@ def detect_creatures(leitura, img=None):
 
     meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
     criaturas = []
+    global _BARRAS_CRUAS
+    _BARRAS_CRUAS = []
     for ini_x, fim_x, y in barras:
         col = int(((ini_x + fim_x) / 2) // TILE_PX)
         lin = int(y // TILE_PX) + CREATURE_BAR_ABOVE
         offset = (col - meio_col, lin - meio_lin)
+        # guarda TODAS, inclusive a do personagem: e por ela que se calibra
+        # CREATURE_BAR_ABOVE, ja que o personagem esta sempre no meio da tela
+        _BARRAS_CRUAS.append(offset)
         if offset == (0, 0) or offset in criaturas:
             continue                     # o proprio personagem, ou repetida
         criaturas.append(offset)
     return criaturas
+
+
+_BARRAS_CRUAS = []                 # o que a ultima leitura achou, sem descartar
+
+
+def desvio_da_barra(barras=None):
+    """
+    Quanto CREATURE_BAR_ABOVE esta errado, medido pela barra do personagem.
+
+    O personagem esta SEMPRE no quadrado do meio da tela. A barra dele, passada
+    pela mesma conversao das outras, tem de cair em (0, 0): a coluna zero
+    porque ele esta no meio, e a linha zero porque a conversao acertou. Caindo
+    em (0, -1), a constante esta um a menos; em (0, 1), um a mais.
+
+    Devolve o desvio em quadrados, ou None quando nenhuma barra caiu na coluna
+    do personagem - o que acontece se a barra do proprio personagem estiver
+    desligada nas opcoes do cliente.
+    """
+    barras = _BARRAS_CRUAS if barras is None else barras
+    na_coluna = [off for off in barras if off[0] == 0]
+    if not na_coluna:
+        return None
+    # a mais perto do meio: com bicho em cima ou embaixo do personagem, a dele
+    # e a que esta mais perto da linha zero
+    return min(na_coluna, key=lambda off: abs(off[1]))[1]
 
 
 def longe_o_bastante(criaturas, distancia=None):
@@ -3737,14 +3767,20 @@ def show_kite(segundos=20.0):
     cx, cy, _, _ = client_rect(leitura)
     fim = time.time() + segundos
     salvo = False
+    desvios = []
     while time.time() < fim and not keyboard.is_pressed(KILL_KEY):
         img = grab((cx + vx, cy + vy, vw, vh))
         criaturas = detect_creatures(leitura, img=img)
         perto = longe_o_bastante(criaturas)
         passo = passo_de_kite(criaturas)
+        desvio = desvio_da_barra()
         print(f"  {len(criaturas)} criatura(s) {criaturas} | mais perto: "
-              f"{perto} SQM | passo: {passo or '-'}          ",
-              end=chr(13), flush=True)
+              f"{perto} SQM | passo: {passo or '-'}"
+              + (f" | barra do personagem em y={desvio:+d}"
+                 if desvio is not None else " | barra do personagem: nao vista")
+              + "          ", end=chr(13), flush=True)
+        if desvio is not None:
+            desvios.append(desvio)
         if criaturas and not salvo:
             desenho = img.copy()
             meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
@@ -3769,6 +3805,30 @@ def show_kite(segundos=20.0):
             salvo = True
         time.sleep(0.3)
     print()
+
+    # A CALIBRACAO. O personagem esta sempre no quadrado do meio, entao a barra
+    # dele tem de cair em y=0. Caindo sempre em y=-1 ou y=+1, CREATURE_BAR_ABOVE
+    # esta errado por esse tanto - e ai TODA posicao de criatura sai errada por
+    # um quadrado em y, o que faz o loot clicar no quadrado do lado.
+    if desvios:
+        comum = max(set(desvios), key=desvios.count)
+        quantos = desvios.count(comum)
+        print(f"[calibra] a barra do proprio personagem caiu em y={comum:+d} em "
+              f"{quantos} de {len(desvios)} leituras.")
+        if comum == 0:
+            print(f"          CREATURE_BAR_ABOVE={CREATURE_BAR_ABOVE} esta "
+                  f"CERTO para o seu cliente.")
+        else:
+            print(f"          Errado por {comum:+d}: ponha "
+                  f"CREATURE_BAR_ABOVE={CREATURE_BAR_ABOVE - comum} "
+                  f"(esta em {CREATURE_BAR_ABOVE}). Sem isso, toda posicao de "
+                  f"criatura sai {abs(comum)} quadrado(s) fora em y, e o loot "
+                  f"clica no quadrado do lado.")
+    else:
+        print("[calibra] nao vi a barra do proprio personagem; nao da para "
+              "calibrar CREATURE_BAR_ABOVE por aqui. Se a barra de vida sobre "
+              "o personagem estiver desligada nas opcoes do cliente, ligue e "
+              "rode de novo, ou confira no PNG se o quadrado ciano cai nele.")
     restore_windows()
 
 
@@ -3903,9 +3963,25 @@ def acha_os_corpos(tela_antes, tela_agora, palpite, andou, onde_havia=(),
     Devolve a lista dos quadrados acima do limiar, do que mudou mais para o
     menos, com no maximo `quantos` itens. Vazia quando nada mudou o bastante.
     """
+    # O PRIMEIRO E O DO acha_o_corpo, e nao o de maior nota crua. Os dois liam
+    # a mesma pontuacao e decidiam diferente: acha_o_corpo desempata pelo mais
+    # perto do palpite quando as notas estao juntas, e aqui era so o maximo. Num
+    # log de cacada com 39 contra 37, o log dizia "corpo em (0,-1)" - a escolha
+    # com desempate - e o bot ia marcar (1,-1), o maximo cru. Falar uma coisa e
+    # fazer outra e pior do que errar: nao da para depurar.
+    escolhido, _n, _s = acha_o_corpo(tela_antes, tela_agora, palpite, andou,
+                                     onde_havia)
+    if escolhido is None:
+        return []
     notas = notas_dos_quadrados(tela_antes, tela_agora, palpite, andou,
                                 onde_havia)
-    return [q for nota, q in notas[:max(quantos, 1)] if nota >= LOOT_DIFF_MIN]
+    fila = [escolhido]
+    for nota, q in notas:
+        if len(fila) >= max(quantos, 1):
+            break
+        if nota >= LOOT_DIFF_MIN and q not in fila:
+            fila.append(q)
+    return fila
 
 
 def notas_dos_quadrados(tela_antes, tela_agora, palpite, andou, onde_havia=()):
