@@ -176,6 +176,14 @@ no mapa. Clique direito num corpo é um "usar", não um andar. Daí:
 - **corpo longe**: fica na fila. Chegar nele exige clique no mapa, que é
   movimento e leva o personagem para dentro do que sobrou da briga.
 
+**A ordem é: mata um, saqueia, ataca o próximo** (`LOOT_ANTES_DE_ATACAR`). Com
+corpo ao alcance esperando, a tecla de atacar espera — engajar o próximo primeiro
+empurra o saque para depois da briga inteira. A espera é curta por construção: só
+vale para corpo **ao alcance**, que se resolve num clique sem sair do lugar, e na
+prática o saque acontece na mesma leitura da morte, antes do ataque. Corpo longe
+não segura nada. E apanhando (vida abaixo de `LOOT_ANTES_HP_MIN`), revidar vem
+primeiro.
+
 Uma consequência: o `esc` de fechar menu **não sai durante a briga**. Ele para
 todas as ações no cliente — solta o alvo engajado e, em kite, corta o passo de
 fuga. Com briga em andamento, um menu de contexto aberto é o menor dos males.

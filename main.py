@@ -321,6 +321,17 @@ LOOT_NA_HORA = True             # saquear na hora o corpo que esta COLADO
                                 # exige clique no mapa, que e movimento e leva
                                 # para dentro do que sobrou.
 
+LOOT_ANTES_DE_ATACAR = True     # mata um, saqueia, ataca o proximo. Segura a
+                                # tecla de atacar enquanto houver corpo AO
+                                # ALCANCE esperando. A espera e curta por
+                                # construcao: corpo ao alcance se resolve num
+                                # clique sem sair do lugar. Corpo LONGE nao
+                                # segura nada - buscar ele e clique no mapa,
+                                # que e movimento e leva para dentro do grupo.
+LOOT_ANTES_HP_MIN = 0.5         # fracao da vida abaixo da qual o saque NAO
+                                # segura o ataque: apanhando, revidar vem
+                                # primeiro.
+
 LOOT_MAX_CORPOS = 4             # corpos na fila de saque. Guardar UM so deixava
                                 # no chao todo bicho da briga menos o ultimo -
                                 # numa caverna se mata em grupo.
@@ -3937,6 +3948,26 @@ def saque_na_hora(leitura, teclado, estado, loot_cd, odo=None):
     return feitos
 
 
+def corpo_ao_alcance(estado, odo=None):
+    """
+    Ha corpo esperando que da para saquear SEM ANDAR?
+
+    E a condicao de segurar a tecla de atacar entre uma morte e a proxima. So
+    vale para corpo ao alcance de propósito: esse se resolve num clique e a
+    espera dura uma leitura. Corpo longe seguraria o ataque por segundos, e
+    ainda exigiria clique no mapa - movimento, que leva o personagem para
+    dentro do que sobrou da briga.
+    """
+    if not ENABLE_LOOT:
+        return False
+    for corpo in (estado.get("corpos") or []):
+        onde = onde_esta_o_corpo(corpo, odo)
+        if max(abs(onde[0]), abs(onde[1])) <= LOOT_DIST \
+                and dentro_da_tela((int(round(onde[0])), int(round(onde[1])))):
+            return True
+    return False
+
+
 def loot(leitura, teclado, estado, loot_cd, odo=None):
     """
     Vai ate o corpo do bicho que acabou de morrer, clica nele e saqueia.
@@ -4524,6 +4555,7 @@ def run_bot():
     sem_foco = False
     parou_por_bicho = False
     assinatura_vista, sem_resposta, lista_inutil = None, 0, None
+    avisou_segura = False              # ja disse que esta esperando o saque
     trava = TravaDeAlvo()
     limpo = 0
     espera_magia = 0.0
@@ -4799,11 +4831,27 @@ def run_bot():
                     # por briga.
                     time.sleep(STOP_ATTACK_DELAY)
 
+            # MATA UM, SAQUEIA, ATACA O PROXIMO. Com corpo ao alcance
+            # esperando, a tecla de atacar espera uma leitura: engajar o
+            # proximo primeiro empurra o saque para depois da briga inteira, e
+            # em kite isso custa o corpo, porque o bot se afasta dos bichos e o
+            # corpo sai da tela. Apanhando (vida abaixo de LOOT_ANTES_HP_MIN),
+            # revidar vem primeiro.
+            segura_por_loot = (LOOT_ANTES_DE_ATACAR and not alvo
+                               and hp > LOOT_ANTES_HP_MIN * HP_MAX
+                               and corpo_ao_alcance(caminho, odo))
+            if segura_por_loot and not avisou_segura:
+                avisou_segura = True
+                print("[attack] corpo ao alcance esperando: saqueio antes de "
+                      "engajar o proximo")
+            elif not segura_por_loot:
+                avisou_segura = False
             apertou = attack_monster(teclado, atacaveis, alvo, attack_cd,
                                      confirmado=sem_alvo >= ATTACK_CONFIRM,
                                      sprites=sprites, monstros=monstros,
                                      permitido=(lista_inutil != assinatura
-                                                and pode_trocar))
+                                                and pode_trocar
+                                                and not segura_por_loot))
             if apertou:
                 espera_magia = time.time() + SPELL_DELAY_AFTER_ATTACK
                 sem_resposta += 1

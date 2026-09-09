@@ -8,17 +8,19 @@ bugs: a fusao de corpos "por perto" juntava vizinhos num corpo so, e a
 referencia da comparacao de tela era apagada a cada morte, deixando a proxima
 sem quadro antigo para comparar.
 
-Numa caverna se mata em grupo, e a ordem certa e: lutar tudo, e so depois
-saquear. Saquear entre uma morte e outra e ruim por tres razoes medidas neste
-projeto - clique no mapa ou na tela durante o ataque troca o modo de luta de
-chase para stand no cliente; parado em cima do corpo com bicho vivo em volta o
-personagem apanha de graca; e corpo no Tibia dura minutos, entao nao ha pressa.
+A ORDEM E: mata um, saqueia, ataca o proximo. Ja foi "lutar tudo e saquear no
+fim", pelo medo de agir durante a briga - e o medo era de ORDEM DE MOVIMENTO
+(tecla de direcao, clique no mapa), que troca chase por stand no cliente.
+Clique direito num corpo ao lado nao e movimento, entao nao ha o que esperar; e
+esperar custava caro, porque em kite o bot se afasta dos bichos e portanto do
+corpo, que sai da tela e e largado.
 
 O que se mede aqui, no laco de verdade (run_bot):
   - cada morte grava UM corpo, e nao so a ultima;
-  - corpo COLADO e saqueado na hora, mesmo com bicho na lista: clicar num corpo
-    ao lado nao e ordem de movimento;
-  - NAO se anda (clique de mapa) ate corpo enquanto ha bicho na briga;
+  - corpo COLADO e saqueado na hora, com bicho ainda na lista;
+  - o primeiro saque acontece com a briga EM CURSO, e nao depois dela;
+  - NAO se anda (clique de mapa) ate corpo enquanto ha bicho na briga - esse
+    limite continua valendo, porque andar e movimento;
   - todos os corpos sao saqueados, cada um com um clique no quadrado dele.
 """
 import io
@@ -270,5 +272,38 @@ if len(gravadas) < 3:
     falhas.append(f"gravou {len(gravadas)} posicao(oes) distinta(s) para 3 "
                   f"bichos em quadrados diferentes: {sorted(gravadas)}")
 
-print("\nVEREDITO:", "OK - grava os corpos do grupo e recolhe depois da briga"
+# ------------------------------------------------------ A SEQUENCIA
+# "mata um, lootea, ataca o proximo": o saque do corpo ao alcance vem ANTES de
+# engajar o seguinte. Engajar primeiro empurra o saque para depois da briga
+# inteira - e em kite isso custa o corpo, porque o bot se afasta dos bichos e o
+# corpo sai da tela.
+ataques = [f[0] for f in fita
+           if f[1] == "tecla" and f[2] == main.ATTACK_HOTKEY]
+cliques_q = sorted(f[0] for f in fita if f[1] == "clique")
+print(f"\nquadros com tecla de atacar: {ataques}")
+print(f"quadros com clique em corpo:  {cliques_q}")
+
+# para cada morte confirmada, o saque tem de acontecer antes de a tecla de
+# atacar sair de novo
+saque_de_cada = {}
+for f in fita:
+    if f[1] == "clique":
+        saque_de_cada.setdefault(f[2], f[0])
+print(f"corpos saqueados: {len(saque_de_cada)} | "
+      f"quadro do saque de cada um: {sorted(saque_de_cada.values())}")
+
+# o teste que importa: entre a PRIMEIRA morte e o PRIMEIRO saque nao pode ter
+# passado muita apertada de ataque - o saque nao pode ficar para o fim
+if cliques_q:
+    primeiro_saque = cliques_q[0]
+    if primeiro_saque > ultimo_com_bicho:
+        falhas.append(f"o primeiro saque so aconteceu no quadro "
+                      f"{primeiro_saque}, depois de a briga acabar "
+                      f"({ultimo_com_bicho}): o pedido e matar um, saquear, e "
+                      f"so entao atacar o proximo")
+    else:
+        print(f"primeiro saque no quadro {primeiro_saque}, com a briga ainda "
+              f"em curso (acaba em {ultimo_com_bicho}): saqueia entre as mortes")
+
+print("\nVEREDITO:", "OK - grava os corpos do grupo e saqueia entre as mortes"
       if not falhas else "FALHOU: " + "; ".join(falhas))
