@@ -129,26 +129,29 @@ print("roteiro: 0-1 vazia | 2-4 na lista | 5-10 engajado | 11+ vazia (morreu)\n"
 for i, o_que in fita:
     print(f"  quadro {i:>2}: {o_que}")
 
+falhas = []
+import os as _os
+if _os.environ.get("VERBOSO"):
+    for _l in log.splitlines():
+        if "[loot]" in _l or "[attack]" in _l:
+            print("   " + _l)
 cliques = [i for i, o in fita if isinstance(o, tuple) and o[0] == "clique"]
-print(f"achou o corpo na tela: {'[loot] o corpo esta em' in log}")
-if "[loot] o corpo esta em" not in log:
+print(f"achou o corpo na tela: {'; corpo em ' in log}")
+print(f"marcou o corpo:        {'[loot] bicho morreu' in log}")
+print(f"clicou no corpo:       {cliques}")
+if "; corpo em " not in log:
     falhas.append("nao achou o corpo na tela, embora o quadrado tenha mudado "
                   "de bicho para corpo")
-miras = [i for i, o in fita if isinstance(o, tuple) and o[0] == "mira"]
-falhas = []
-print(f"\nmarcou o corpo: {'[loot] bicho morreu' in log}")
-print(f"tecla de saque no codigo: "
-      f"{'ainda existe' if hasattr(main, 'LOOT_HOTKEY') else 'removida'}")
-print(f"mirou o cursor: {miras}")
-print(f"clicou no corpo: {cliques}")
 if not cliques:
     falhas.append("nunca clicou no corpo")
 if "[loot] bicho morreu" not in log:
     falhas.append("o corpo nunca foi marcado: a fiacao entre a morte e o loot "
                   "nao fecha")
-if hasattr(main, "LOOT_HOTKEY"):
-    falhas.append("LOOT_HOTKEY voltou a existir: o gesto e um clique no corpo "
-                  "e mais nada")
+# a VARREDURA e que nao pode voltar. A tecla ficou, uma vez e no proprio
+# quadrado do corpo - o que saiu foi apertar em nove lugares.
+if hasattr(main, "LOOT_VARRE"):
+    falhas.append("LOOT_VARRE voltou a existir: o gesto e um clique no corpo, "
+                  "com a tecla no mesmo ponto, e nada de varrer em volta")
 
 print("\nVEREDITO:", "OK - o loot acontece de ponta a ponta"
       if not falhas else "FALHOU: " + "; ".join(falhas))

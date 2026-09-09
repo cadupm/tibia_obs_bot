@@ -134,6 +134,25 @@ bichos idênticos morrendo um a um:
   passa a ser *depois* da morte — diferença zero, nada identificado. Agora é o
   quadro de `TARGET_GONE_READS + 1` leituras atrás.
 
+Depois disso o bot ainda saqueava **só um** numa briga de verdade. Faltavam três
+coisas, e as duas primeiras só apareciam com os bichos **colados** — que é como
+eles morrem, porque estavam todos batendo em você:
+
+- **corpos a 1 SQM de distância eram fundidos num só.** A fusão existia para
+  "dois bichos morreram no mesmo quadrado", mas a tolerância era de 1 SQM
+  inteiro. Medido: `(1,0)` e `(1,1)` viravam um corpo; `(1,0)` e `(2,0)` também.
+  Dois bichos lado a lado, um loot. Agora fusão é **mesmo quadrado**, e nada
+  menos;
+- **o histórico da comparação era apagado a cada morte**, deixando a morte
+  seguinte da mesma briga sem quadro antigo com que comparar — a janela
+  recomeçava do zero e "o quadro de antes" virava o de agora. A janela já tem
+  tamanho fixo, que é o que impede leitura velha de sobrar;
+- **duas entradas que somem na mesma leitura eram um corpo.** A morte é
+  confirmada `TARGET_GONE_READS` leituras depois de a entrada sumir, e dois
+  bichos morrendo nesse intervalo — o grupo todo com pouca vida, o caso normal —
+  somem juntos. A contagem já sabia que foram dois; faltava marcar um quadrado
+  para cada.
+
 E a busca deixou de ser um anel em volta de um palpite: ela cobre **os quadrados
 onde havia bicho** na leitura de referência. O palpite é sempre o bicho mais
 perto, e com empate de distância sempre o mesmo dos três — o corpo dos outros,

@@ -2726,6 +2726,9 @@ class TravaDeAlvo:
         self.avisou = False
         self.sumidas = 0
         self.morreu = False               # um bicho saiu da lista: o loot le
+        self.mortos = 0                   # QUANTOS sairam: duas entradas podem
+                                          # sumir na mesma leitura, e ai sao
+                                          # dois corpos, nao um
 
     def atualiza(self, alvo, alvo_sprite, sprites, agora=None):
         """Devolve True se pode apertar a tecla de atacar (nenhum alvo preso)."""
@@ -2759,6 +2762,7 @@ class TravaDeAlvo:
                           + (", posso trocar" if not alvo else
                              " (a moldura ja passou para o proximo)"))
                     self.morreu = True     # o loot le isto e busca o corpo
+                    self.mortos = quantos
                     self.iguais = iguais_agora
                     self.sumidas = 0
                     if not alvo:
@@ -3655,8 +3659,57 @@ def acha_o_corpo(tela_antes, tela_agora, palpite, andou, onde_havia=()):
     corpo mudaria de especie para especie e precisaria de uma tabela; "este
     quadrado tinha um bicho e agora esta diferente" vale para qualquer bicho.
     """
-    if not LOOT_ACHA_CORPO or tela_antes is None or tela_agora is None:
+    notas = notas_dos_quadrados(tela_antes, tela_agora, palpite, andou,
+                                onde_havia)
+    if not notas:
         return None, 0.0, 0.0
+    melhor, segundo = notas[0], (notas[1] if len(notas) > 1 else (0.0, None))
+    if melhor[0] < LOOT_DIFF_MIN:
+        # nada mudou o bastante: nao ha corpo reconhecivel aqui
+        return None, melhor[0], segundo[0]
+    if segundo[0] > 0 and melhor[0] < segundo[0] * LOOT_DIFF_MARGEM:
+        # EMPATE NAO E IGNORANCIA. Dois quadrados mudando muito e a sprite do
+        # bicho pegando os dois, ou dois bichos morrendo lado a lado - nos dois
+        # casos ha corpo por ali. Antes isso devolvia None e o bot largava o
+        # corpo; agora desempata pelo mais perto do palpite, que e a informacao
+        # independente que se tem.
+        empatados = [q for nota, q in notas if nota >= segundo[0]]
+        perto = min(empatados,
+                    key=lambda q: (abs(q[0] - palpite[0])
+                                   + abs(q[1] - palpite[1])))
+        return perto, melhor[0], segundo[0]
+    return melhor[1], melhor[0], segundo[0]
+
+
+def acha_os_corpos(tela_antes, tela_agora, palpite, andou, onde_havia=(),
+                   quantos=1):
+    """
+    Os `quantos` quadrados que mais mudaram, para VARIAS mortes de uma vez.
+
+    A morte e confirmada TARGET_GONE_READS leituras depois de a entrada sumir
+    da lista. Dois bichos morrendo dentro desse intervalo - com o grupo todo
+    com pouca vida, o caso normal - somem juntos, e o bot marcava UM corpo so:
+    a bandeira de morte e uma, ainda que a contagem soubesse que duas entradas
+    tinham sumido. Aqui cada morte ganha o seu quadrado.
+
+    Devolve a lista dos quadrados acima do limiar, do que mudou mais para o
+    menos, com no maximo `quantos` itens. Vazia quando nada mudou o bastante.
+    """
+    notas = notas_dos_quadrados(tela_antes, tela_agora, palpite, andou,
+                                onde_havia)
+    return [q for nota, q in notas[:max(quantos, 1)] if nota >= LOOT_DIFF_MIN]
+
+
+def notas_dos_quadrados(tela_antes, tela_agora, palpite, andou, onde_havia=()):
+    """
+    Quanto cada candidato mudou, do que mudou mais para o que mudou menos.
+
+    Separado da escolha porque quem decide precisa de coisas diferentes: para
+    uma morte vale o primeiro colocado; para duas mortes na mesma leitura valem
+    os dois primeiros. A conta e a mesma.
+    """
+    if not LOOT_ACHA_CORPO or tela_antes is None or tela_agora is None:
+        return []
     # os candidatos: onde havia bicho, e o anel em volta do palpite. O anel
     # continua porque a barra de vida e desenhada um quadrado acima da criatura
     # e o arredondamento erra por 1 SQM com o bicho a meio passo.
@@ -3677,28 +3730,8 @@ def acha_o_corpo(tela_antes, tela_agora, palpite, andou, onde_havia=()):
         nota = mudou_quanto(recorte_do_quadrado(tela_antes, antes_em),
                             recorte_do_quadrado(tela_agora, aqui))
         notas.append((nota, aqui))
-    if not notas:
-        return None, 0.0, 0.0
-    if not notas:
-        return None, 0.0, 0.0
     notas.sort(reverse=True)
-    melhor, segundo = notas[0], (notas[1] if len(notas) > 1 else (0.0, None))
-    if melhor[0] < LOOT_DIFF_MIN:
-        # nada mudou o bastante: nao ha corpo reconhecivel aqui
-        return None, melhor[0], segundo[0]
-    if segundo[0] > 0 and melhor[0] < segundo[0] * LOOT_DIFF_MARGEM:
-        # EMPATE NAO E IGNORANCIA. Dois quadrados mudando muito e a sprite do
-        # bicho pegando os dois, ou dois bichos morrendo lado a lado - nos dois
-        # casos ha corpo por ali. Antes isso devolvia None e o bot largava o
-        # corpo; agora desempata pelo mais perto do palpite, que e a informacao
-        # independente que se tem.
-        empatados = [q for nota, q in notas if nota >= segundo[0]]
-        perto = min(empatados,
-                    key=lambda q: (abs(q[0] - palpite[0])
-                                   + abs(q[1] - palpite[1])))
-        return perto, melhor[0], segundo[0]
-
-    return melhor[1], melhor[0], segundo[0]
+    return notas
 
 
 def onde_esta_o_corpo(corpo, odo):
@@ -3948,12 +3981,17 @@ def marca_o_corpo(estado, onde, odo=None, visto_em=None, na_tela=False):
                 base[1] + float(onde[1]) * MINIMAP_PX_SQM)
     corpos = estado.setdefault("corpos", [])
 
-    # corpo repetido: duas mortes quase no mesmo lugar sao um bicho que morreu e
-    # outro que caiu em cima. Saquear o mesmo quadrado duas vezes e so perder
-    # tempo - a varredura do primeiro ja cobre o segundo.
+    # CORPO REPETIDO E O MESMO QUADRADO, e nao "por perto". Dois bichos que
+    # morrem em quadrados vizinhos sao dois corpos, cada um com o seu loot -
+    # e numa caverna eles morrem colados, lado a lado, porque estavam todos
+    # batendo em voce. A tolerancia era de 1 SQM inteiro: dois bichos lado a
+    # lado viravam UM corpo e o loot do outro ficava no chao. Medido, com a
+    # tolerancia de antes: (1,0) e (1,1) fundiam; (1,0) e (2,0) fundiam.
+    quadrado_novo = (round(absoluto[0] / MINIMAP_PX_SQM),
+                     round(absoluto[1] / MINIMAP_PX_SQM))
     for outro in corpos:
-        if (abs(outro["abs"][0] - absoluto[0])
-                + abs(outro["abs"][1] - absoluto[1])) <= MINIMAP_PX_SQM:
+        if (round(outro["abs"][0] / MINIMAP_PX_SQM),
+                round(outro["abs"][1] / MINIMAP_PX_SQM)) == quadrado_novo:
             return
 
     corpos.append({"abs": absoluto, "off": (float(onde[0]), float(onde[1])),
@@ -4500,6 +4538,8 @@ def run_bot():
                     del historico[:-(TARGET_GONE_READS + 2)]
             if ENABLE_LOOT and trava.morreu:
                 trava.morreu = False
+                mortos_agora = max(getattr(trava, "mortos", 1), 1)
+                trava.mortos = 0
                 historico = caminho.get("bichos_vistos") or []
                 if historico:
                     # O QUADRO DE ANTES DA MORTE, e nao o mais recente. A morte
@@ -4534,15 +4574,27 @@ def run_bot():
                         havia_agora = [(int(round(q[0] - andado[0])),
                                         int(round(q[1] - andado[1])))
                                        for q in havia]
+                        # UM QUADRADO POR MORTE. Duas entradas podem sumir na
+                        # mesma leitura - grupo todo com pouca vida - e ai sao
+                        # dois corpos. A conta da trava sabe quantos foram.
+                        quantas_mortes = mortos_agora
+                        andou_px = (int(round(andado[0])),
+                                    int(round(andado[1])))
+                        agora_tela = viewport(leitura)
+                        todos = acha_os_corpos(
+                            tela_antes, agora_tela, palpite, andou_px,
+                            onde_havia=havia_agora, quantos=quantas_mortes)
                         achou, nota, segundo = acha_o_corpo(
-                            tela_antes, viewport(leitura), palpite,
-                            (int(round(andado[0])), int(round(andado[1]))),
+                            tela_antes, agora_tela, palpite, andou_px,
                             onde_havia=havia_agora)
                         if achou is not None:
-                            print(f"[loot] o corpo esta em {achou}: esse "
-                                  f"quadrado mudou {nota:.0f} por pixel desde "
-                                  f"que o bicho estava vivo (segundo colocado: "
-                                  f"{segundo:.0f}; palpite era {palpite})")
+                            print(f"[loot] {quantas_mortes} morte(s); corpo em "
+                                  f"{achou}: esse quadrado mudou {nota:.0f} por "
+                                  f"pixel desde que o bicho estava vivo "
+                                  f"(segundo: {segundo:.0f}; palpite era "
+                                  f"{palpite})"
+                                  + (f" e mais {len(todos) - 1} quadrado(s) "
+                                     f"{todos[1:]}" if len(todos) > 1 else ""))
                         else:
                             print(f"[loot] nenhum quadrado mudou o bastante "
                                   f"para ser corpo (maior {nota:.0f}, limiar "
@@ -4550,7 +4602,9 @@ def run_bot():
                                   + (": largo o corpo" if LOOT_SO_SE_ACHOU
                                      else f": clico no palpite {palpite}"))
                     if achou is not None:
-                        marca_o_corpo(caminho, achou, odo_agora, na_tela=True)
+                        for quadrado_corpo in (todos or [achou]):
+                            marca_o_corpo(caminho, quadrado_corpo, odo_agora,
+                                          na_tela=True)
                     elif LOOT_ACHA_CORPO and LOOT_SO_SE_ACHOU:
                         # com LOOT_SO_SE_ACHOU ligado, nao age sem certeza
                         pass
@@ -4571,7 +4625,13 @@ def run_bot():
                           "vida dele na tela do jogo, entao nao sei onde caiu. "
                           "Confira GAME_VIEW/TILE_PX com --kite: se ali der "
                           "0 criaturas com bicho na tela, e a deteccao.")
-                caminho["bichos_vistos"] = []
+                # O HISTORICO NAO SE APAGA AQUI. Ele e a referencia da
+                # comparacao de tela, e apagar deixava a proxima morte da
+                # mesma briga sem quadro antigo para comparar - a janela
+                # recomecava do zero e o "quadro de antes" virava o de agora,
+                # dando diferenca zero. A janela ja tem tamanho fixo
+                # (TARGET_GONE_READS + 2), que e o que impede leitura velha de
+                # sobrar.
 
             # a lista mudou? volta a valer a pena tentar atacar
             assinatura = battle_assinatura(sprites)

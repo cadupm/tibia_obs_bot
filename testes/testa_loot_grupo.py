@@ -2,6 +2,12 @@
 """Tres bichos na battle list: gravar os TRES corpos, recolher depois de matar
 todos.
 
+Eles morrem COLADOS no personagem e lado a lado, que e o que acontece quando os
+tres estavam batendo nele. Com bichos espacados o teste passava escondendo dois
+bugs: a fusao de corpos "por perto" juntava vizinhos num corpo so, e a
+referencia da comparacao de tela era apagada a cada morte, deixando a proxima
+sem quadro antigo para comparar.
+
 Numa caverna se mata em grupo, e a ordem certa e: lutar tudo, e so depois
 saquear. Saquear entre uma morte e outra e ruim por tres razoes medidas neste
 projeto - clique no mapa ou na tela durante o ataque troca o modo de luta de
@@ -27,8 +33,11 @@ _vx, _vy, VW, VH = main.GAME_VIEW
 MEIO_COL, MEIO_LIN = (VW // main.TILE_PX) // 2, (VH // main.TILE_PX) // 2
 CHAO = np.random.default_rng(5).integers(40, 70, (VH, VW, 3), dtype=np.uint8)
 
-# tres bichos, em tres quadrados; morrem um por um, da direita para a esquerda
-ONDE = [(2, 0), (0, 2), (-2, 0)]
+# GEOMETRIA REALISTA: os tres estavam batendo no personagem, entao morrem
+# COLADOS nele e lado a lado. Era (2,0),(0,2),(-2,0) - espacados, o que escondia
+# dois bugs: a fusao de corpos "por perto" (1 SQM inteiro de tolerancia) juntava
+# vizinhos num corpo so, e o loot pegava apenas um.
+ONDE = [(1, 0), (1, 1), (0, 1)]
 
 
 def sprite(cor):
@@ -41,6 +50,9 @@ SPRITES = [sprite((200, 30, 30)), sprite((30, 200, 30)), sprite((30, 30, 200))]
 
 
 def bicho(img, off, cor):
+    """Desenha dentro do quadrado, sem invadir o vizinho: com os bichos colados,
+    sprite transbordando faria o quadrado do vizinho mudar tambem e o teste
+    mediria a sobreposicao em vez da deteccao."""
     x0 = (MEIO_COL + off[0]) * main.TILE_PX + 12
     y0 = (MEIO_LIN + off[1]) * main.TILE_PX + 12
     img[y0:y0 + 44, x0:x0 + 44] = cor
@@ -72,7 +84,7 @@ VAZIA = (0, False, None, [], None)
 ROTEIRO = []
 for vivos, engajado in (({0, 1, 2}, False), ({0, 1, 2}, True),
                         ({1, 2}, True), ({2}, True), (set(), False)):
-    quantos = 8 if vivos else 40
+    quantos = 6 if vivos else 40
     for _ in range(quantos):
         presentes = [SPRITES[i] for i in sorted(vivos)]
         if not presentes:
@@ -83,7 +95,7 @@ for vivos, engajado in (({0, 1, 2}, False), ({0, 1, 2}, True),
 VIVOS_POR_QUADRO = []
 for vivos, _e in (({0, 1, 2}, 0), ({0, 1, 2}, 0), ({1, 2}, 0), ({2}, 0),
                   (set(), 0)):
-    VIVOS_POR_QUADRO += [frozenset(vivos)] * (8 if vivos else 40)
+    VIVOS_POR_QUADRO += [frozenset(vivos)] * (6 if vivos else 40)
 
 
 class Janela:
@@ -227,11 +239,19 @@ if len(cliques) != len(saques) * main.LOOT_CLIQUES:
     falhas.append(f"{len(cliques)} clique(s) para {len(saques)} corpo(s): "
                   f"esperava {main.LOOT_CLIQUES} por corpo")
 
+# O QUE IMPORTA E TER AGIDO EM LUGARES DIFERENTES, e o caminho pode ser andar
+# (corpo longe) ou clicar noutro ponto da tela (corpo colado). Exigir trajeto de
+# mapa era errado nesta geometria: os tres estao dentro de LOOT_DIST e nao ha
+# para onde andar.
 andadas = [f[2] for f in fita if f[1] == "mapa"]
-print(f"trajetos ate corpo: {andadas}")
-if len(saques) >= 2 and len(set(andadas)) < 2:
-    falhas.append(f"os corpos estao em quadrados diferentes e o bot andou "
-                  f"sempre para o mesmo lugar: {andadas}")
+pontos = {c[2] for c in cliques}
+lugares = len(set(andadas)) if andadas else len(pontos)
+print(f"trajetos de mapa: {andadas or 'nenhum (todos ao alcance)'}")
+print(f"pontos de clique distintos: {len(pontos)}")
+if len(saques) >= 2 and lugares < 2:
+    falhas.append(f"os corpos estao em quadrados diferentes e o bot agiu "
+                  f"sempre no mesmo lugar (trajetos {andadas}, pontos "
+                  f"{pontos})")
 
 # e as posicoes gravadas tem de ser as tres, e nao a mesma tres vezes
 gravadas = set()

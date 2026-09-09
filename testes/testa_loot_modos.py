@@ -156,7 +156,7 @@ def roda(modo, andar):
         main.run_bot()
     log = saida.getvalue()
     return {
-        "achou": "[loot] o corpo esta em" in log,
+        "achou": "; corpo em " in log,
         "marcou": "[loot] bicho morreu" in log,
         "cliques": sum(1 for a in fita if a[0] == "clique"),
         "teclas": sum(1 for a in fita if a[0] == "tecla"

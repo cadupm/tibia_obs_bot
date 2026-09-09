@@ -145,6 +145,35 @@ if anel[0] != (0, 0):
     falhas.append(f"a busca comeca em {anel[0]}, e nao no palpite (0,0): o "
                   f"quadrado mais provavel tem de ser o primeiro")
 
+# --------------- 7c) DUAS mortes na mesma leitura: dois quadrados
+# A morte e confirmada TARGET_GONE_READS leituras depois de a entrada sumir da
+# lista. Dois bichos morrendo dentro desse intervalo - com o grupo todo com
+# pouca vida, o caso normal - somem juntos, e a bandeira de morte e UMA. A
+# contagem sabe que foram dois; aqui cada um ganha o seu quadrado.
+dois_a = poe(poe(BASE.copy(), (1, 0), (170, 40, 40)), (1, 1), (170, 40, 40))
+dois_b = poe(poe(BASE.copy(), (1, 0), (95, 75, 55)), (1, 1), (95, 75, 55))
+um = main.acha_os_corpos(dois_a, dois_b, (1, 0), (0, 0),
+                         onde_havia=[(1, 0), (1, 1)], quantos=1)
+dois = main.acha_os_corpos(dois_a, dois_b, (1, 0), (0, 0),
+                           onde_havia=[(1, 0), (1, 1)], quantos=2)
+print(f"\ndois bichos mortos lado a lado:")
+print(f"  pedindo 1 quadrado:  {um}")
+print(f"  pedindo 2 quadrados: {sorted(dois)}")
+if len(um) != 1:
+    falhas.append(f"pedindo 1 quadrado devolveu {um}")
+if sorted(dois) != [(1, 0), (1, 1)]:
+    falhas.append(f"pedindo 2 quadrados devolveu {sorted(dois)}, esperava os "
+                  f"dois onde havia bicho: [(1, 0), (1, 1)]")
+# e nao inventa quadrado quando so um mudou
+so_um_a = poe(BASE.copy(), (1, 0), (170, 40, 40))
+so_um_b = poe(BASE.copy(), (1, 0), (95, 75, 55))
+pedidos = main.acha_os_corpos(so_um_a, so_um_b, (1, 0), (0, 0),
+                              onde_havia=[(1, 0), (1, 1)], quantos=2)
+print(f"  um bicho morto, pedindo 2: {pedidos} (nao pode inventar o segundo)")
+if len(pedidos) != 1:
+    falhas.append(f"com um corpo so, pedindo 2, devolveu {pedidos}: quadrado "
+                  f"que nao mudou nao e corpo")
+
 # --------------- 8) quanto o corpo muda, de fato: o numero que calibra
 print(f"\npara calibrar LOOT_DIFF_MIN (hoje {main.LOOT_DIFF_MIN}):")
 for rotulo, a, b in (("bicho -> corpo", antes, depois),
