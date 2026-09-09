@@ -476,6 +476,28 @@ O código está comentado com o *porquê* de cada uma delas.
   cenários com a regra de ouro **deliberadamente quebrada** e exige reprovação —
   8 de 8. Teste que nunca reprova é teste que não existe.
 
+- **Config salva vence o código, e nada avisava.** Mudei o padrão de
+  `LOOT_SO_SE_ACHOU` de `True` para `False` porque ligado ele faz o bot largar
+  o corpo sempre que a identificação na tela não fecha. A config já salva
+  manteve `True`, e o bot parou de ir nos corpos — sem uma linha de erro. Agora
+  o arranque **lista** as chaves cujo valor difere do padrão do código: é normal
+  para o que você ajustou, e é o primeiro lugar para olhar quando o bot deixa de
+  fazer algo que fazia. Esse relatório, na primeira vez que rodou, achou outros
+  dois estragos na mesma config.
+
+- **Campo de texto vazio virava a palavra "None".** A GUI gravava vazio como
+  `None`, o json escreve `null`, e o carregador fazia `str(None)` — então
+  `LOOT_MOD` valia `"None"` e o clique segurava uma tecla com esse nome. Vazio
+  agora é vazio, nas duas pontas.
+
+- **O `pyautogui` não reclama de tecla que não conhece: ele simplesmente não
+  aperta nada.** É o pior tipo de falha — o bot decide andar, manda a tecla, e o
+  personagem fica parado sem erro em lugar nenhum. Achado numa config de
+  verdade: o campo das diagonais tinha `cima-esq,cima-dir,baixo-esq,baixo-dir`,
+  o **texto da dica** da interface digitado como se fosse valor, com as
+  diagonais ligadas. Quatro das oito direções não existiam. Agora nome inválido
+  é descartado com aviso, e o mesmo vale para o modificador do clique.
+
 - **O `config.json` só valia dentro da GUI.** Nenhuma linha do `main.py` lia o
   arquivo: rodando pela linha de comando o bot usava os valores padrão do
   código. Isso envenenava justamente os modos de diagnóstico — `--loot` conferia

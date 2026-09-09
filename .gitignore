@@ -7,3 +7,5 @@ __pycache__/
 *.npy
 !docs/*.png
 !testes/tela_cave.png
+
+config.json.antes

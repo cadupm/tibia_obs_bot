@@ -872,7 +872,12 @@ class Painel:
             if tipo is bool:
                 cfg[attr] = bool(bruto)
             elif tipo is str:
-                cfg[attr] = str(bruto).strip() or None
+                # VAZIO E VAZIO, e nao None. Gravado como None, o json escreve
+                # null; o carregador le null num campo de texto e faz
+                # str(None) = "None", que vira o valor. Foi assim que
+                # LOOT_MOD virou a string "None" e o clique passou a segurar
+                # uma tecla chamada "None".
+                cfg[attr] = str(bruto).strip()
             else:
                 try:
                     valor = float(bruto)

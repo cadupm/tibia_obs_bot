@@ -357,13 +357,44 @@ KITE_BLOQUEIO = 3.0             # s que um lado fica fora depois de o passo nao
 KITE_DIAGONAIS_TECLAS = "num7,num9,num1,num3"
 
 
+def tecla_existe(nome):
+    """O pyautogui sabe apertar esta tecla?
+
+    Nome que ele nao conhece nao estoura: ele simplesmente NAO APERTA NADA. E
+    o pior tipo de falha - o bot decide andar, manda a tecla, e o personagem
+    fica parado sem nenhum erro em lugar nenhum.
+    """
+    try:
+        return nome in pyautogui.KEYBOARD_KEYS
+    except Exception:
+        return True          # sem lista para conferir, confia e segue
+
+
 def monta_passos():
-    """As teclas de andar com o rumo de cada uma, montado da configuracao."""
+    """
+    As teclas de andar com o rumo de cada uma, montado da configuracao.
+
+    TECLA QUE NAO EXISTE E DESCARTADA, com aviso. Achado em config de verdade:
+    o campo das diagonais tinha
+    'cima-esq,cima-dir,baixo-esq,baixo-dir' - o TEXTO DA DICA da interface,
+    digitado como se fosse valor - e com as diagonais ligadas. Quatro das oito
+    direcoes apertavam teclas inexistentes, entao o personagem simplesmente nao
+    andava nessas quatro, sem um erro em lugar nenhum.
+    """
     passos = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
     rumos = [(-1, -1), (1, -1), (-1, 1), (1, 1)]
     teclas = [t.strip() for t in KITE_DIAGONAIS_TECLAS.split(",") if t.strip()]
+    ruins = []
     for tecla, rumo in zip(teclas, rumos):
-        passos[tecla] = rumo
+        if tecla_existe(tecla):
+            passos[tecla] = rumo
+        else:
+            ruins.append(tecla)
+    if ruins:
+        print(f"[teclas] {', '.join(repr(t) for t in ruins)} nao e(sao) tecla(s) "
+              f"que o bot saiba apertar; essas diagonais ficam de fora. "
+              f"Exemplos validos: num7,num9,num1,num3 ou q,e,z,c. "
+              f"Confira com --teclas.")
     return passos
 
 
@@ -417,10 +448,12 @@ def carrega_config(caminho=None):
     if not isinstance(cfg, dict):
         return 0
     entraram = 0
+    trocados = []
     for chave, valor in cfg.items():
         if not chave.isupper() or chave not in globals():
             continue
         atual = globals()[chave]
+        padrao = atual                  # o valor escrito no codigo, para avisar
         try:
             if isinstance(atual, bool):
                 valor = bool(valor)
@@ -429,13 +462,30 @@ def carrega_config(caminho=None):
             elif isinstance(atual, float):
                 valor = float(valor)
             elif isinstance(atual, str):
-                valor = str(valor)
+                # null num campo de texto e VAZIO, e nao a palavra "None"
+                valor = "" if valor is None else str(valor)
         except (TypeError, ValueError):
             print(f"[config] {chave}={valor!r} nao serve para {type(atual).__name__}; "
                   f"mantenho {atual!r}")
             continue
         globals()[chave] = valor
         entraram += 1
+        if valor != padrao:
+            trocados.append((chave, padrao, valor))
+
+    # DIZER O QUE ESTA DIFERENTE DO PADRAO. Config salva vence o codigo, e por
+    # isso um padrao que eu mude aqui NAO chega em quem ja salvou a config -
+    # silenciosamente. Aconteceu: LOOT_SO_SE_ACHOU foi salvo como True quando
+    # esse era o padrao; depois virou False porque ligado ele faz o bot largar
+    # o corpo sempre que a identificacao na tela nao fecha. A config antiga
+    # manteve True e o bot parou de ir nos corpos, sem nada denunciando.
+    if trocados:
+        print(f"[config] {len(trocados)} valor(es) de {os.path.basename(caminho)} "
+              f"diferentes do padrao do codigo:")
+        for chave, padrao, valor in sorted(trocados):
+            print(f"           {chave} = {valor!r}   (padrao {padrao!r})")
+        print("         Isto e normal para o que voce ajustou. Se o bot parou "
+              "de fazer algo que fazia, o culpado costuma estar nesta lista.")
     atualiza_passos()      # as teclas de andar vem da configuracao
     return entraram
 
@@ -1320,6 +1370,10 @@ def click_game(x, y, pausa=0.09, botao="esquerdo", mod=""):
     ax = int(x * 65535 / max(largura - 1, 1))
     ay = int(y * 65535 / max(altura - 1, 1))
     desce, sobe = BOTOES.get(botao, BOTOES["esquerdo"])
+    if mod and not tecla_existe(mod):
+        print(f"[loot] {mod!r} nao e uma tecla para segurar junto com o "
+              f"clique; clico sem modificador")
+        mod = ""
     user32.mouse_event(MOUSEEVENTF_MOVE_ABS, ax, ay, 0, 0)
     time.sleep(0.05)
     if mod:
@@ -4599,7 +4653,10 @@ def run_bot():
                             print(f"[loot] nenhum quadrado mudou o bastante "
                                   f"para ser corpo (maior {nota:.0f}, limiar "
                                   f"{LOOT_DIFF_MIN:.0f})"
-                                  + (": largo o corpo" if LOOT_SO_SE_ACHOU
+                                  + (": LARGO O CORPO porque "
+                                     "LOOT_SO_SE_ACHOU esta ligado (desligue "
+                                     "para clicar no palpite em vez de nao "
+                                     "fazer nada)" if LOOT_SO_SE_ACHOU
                                      else f": clico no palpite {palpite}"))
                     if achou is not None:
                         for quadrado_corpo in (todos or [achou]):
