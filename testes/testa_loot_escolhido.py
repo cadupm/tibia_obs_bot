@@ -164,7 +164,6 @@ def roda(quem_morre, so_marcados, marcas):
     main.ENABLE_PARALISIA = False
     main.ENABLE_LOOT = True
     main.LOOT_SO_MARCADOS = so_marcados
-    main.LOOT_SO_SE_ACHOU = False
     main.ATTACK_CONFIRM = 2
     main.STOP = False
 

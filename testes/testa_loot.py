@@ -153,9 +153,7 @@ print(f"tecla de saque: {main.LOOT_TECLA!r}"
       + (f" + {main.NUMPAD_DO_SINAL[main.LOOT_TECLA]!r} (numpad)"
          if main.LOOT_TECLA_NUMPAD and main.LOOT_TECLA in main.NUMPAD_DO_SINAL
          else "") + f", uma vez, no quadrado do corpo")
-print(f"so saqueia se identificou na tela: {main.LOOT_SO_SE_ACHOU}")
-print(f"fila de corpos: ate {main.LOOT_MAX_CORPOS} | busca num raio de "
-      f"{main.LOOT_BUSCA_RAIO} SQM ({len(main.anel_de_busca())} quadrados)\n")
+print(f"fila de corpos: ate {main.LOOT_MAX_CORPOS}" + chr(10))
 
 # ------------------------------------------- 1) IGUAL NOS TRES MODOS
 # O que muda entre stand, chase e kite e a distancia de onde se parte. O gesto

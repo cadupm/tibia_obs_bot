@@ -240,7 +240,6 @@ main.ENABLE_SPELL = main.ENABLE_AUTOCAST = False
 main.ENABLE_PARALISIA = False
 main.ENABLE_LOOT = True
 main.LOOT_SO_MARCADOS = False
-main.LOOT_SO_SE_ACHOU = False
 main.LOOT_PRAZO = 3.0            # a briga do meio dura mais do que isso
 main.ATTACK_CONFIRM = 2
 main.STOP = False

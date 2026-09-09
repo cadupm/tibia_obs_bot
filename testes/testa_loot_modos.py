@@ -206,49 +206,47 @@ if len(distintos) != 1:
                   f"modo de luta muda de onde se parte, nao o que se faz com "
                   f"o corpo")
 
-# ------------- NUNCA FICAR SEM AGIR. A identificacao na tela pode nao fechar:
-# os limiares vem de cenario sintetico, e a sprite do bicho e maior que um
-# quadrado, entao o vizinho tambem muda. Nesse caso o bot tem de cair no palpite
-# da odometria e clicar UM ponto, e nao deixar de fazer nada - foi assim que uma
-# versao que pegava loot virou uma que nao pegava.
-print("\ncom o quadrado NAO mudando na morte (identificacao nao fecha)")
+# ------------- NUNCA FICAR SEM AGIR. Sem barra sumindo na tela, o corpo fica
+# onde o bicho foi visto vivo pela ultima vez - que e a definicao de onde ele
+# morreu. Aqui havia uma comparacao de imagem no meio, com limiar, e um
+# interruptor (LOOT_SO_SE_ACHOU) para largar o corpo quando ela nao fechava.
+# Ela saiu: num log de cacada punha o corpo dois e tres quadrados ABAIXO do
+# bicho, e "qual quadrado mudou mais de cor" nunca foi a mesma pergunta que
+# "onde o bicho estava".
+print("\ncom o quadrado NAO mudando na morte")
 # TELA_VIVO o tempo todo: o bot VE a criatura enquanto ela esta na lista - sem
 # isso nem chega a existir corpo para procurar, que e outra falha - e o quadrado
 # nao muda na morte, que e o caso em que a identificacao nao fecha. Chao puro
 # aqui nao serve: sem a barra de vida o bot nunca ve o bicho, e o teste mediria
 # a falha errada.
 CONGELADA = TELA_VIVO
-for so_se_achou in (False, True):
-    main.LOOT_SO_SE_ACHOU = so_se_achou
-    fita_c, quadro_c = [], {"i": 0}
+fita_c, quadro_c = [], {"i": 0}
 
-    def sleep_c(_s, _q=quadro_c):
-        _q["i"] += 1
-        if _q["i"] >= len(ROTEIRO):
-            main.STOP = True
 
-    main.grab = lambda regiao: CONGELADA
-    main.battle_state = lambda win, _q=quadro_c: ROTEIRO[
-        min(_q["i"], len(ROTEIRO) - 1)]
-    main.time = type("T", (), {
-        "time": staticmethod(lambda _q=quadro_c: _q["i"] * 0.3),
-        "sleep": staticmethod(sleep_c)})()
-    main.click_game = lambda x, y, pausa=0.09, botao="esquerdo", mod="": \
-        fita_c.append(("clique", botao))
-    main.STOP = False
-    saida = io.StringIO()
-    with redirect_stdout(saida):
-        main.run_bot()
-    n = sum(1 for a in fita_c if a[0] == "clique")
-    print(f"  LOOT_SO_SE_ACHOU={so_se_achou}: {n} clique(s) no corpo")
-    if not so_se_achou and n == 0:
-        falhas.append("sem identificar o quadrado na tela o bot nao fez NADA. "
-                      "Tem de cair no palpite da odometria e clicar um ponto: "
-                      "nao decidir nao pode virar nao agir")
-    if so_se_achou and n:
-        falhas.append(f"com LOOT_SO_SE_ACHOU ligado ele clicou {n}x sem ter "
-                      f"identificado o quadrado")
-main.LOOT_SO_SE_ACHOU = False
+def sleep_c(_s, _q=quadro_c):
+    _q["i"] += 1
+    if _q["i"] >= len(ROTEIRO):
+        main.STOP = True
+
+
+main.grab = lambda regiao: CONGELADA
+main.battle_state = lambda win, _q=quadro_c: ROTEIRO[
+    min(_q["i"], len(ROTEIRO) - 1)]
+main.time = type("T", (), {
+    "time": staticmethod(lambda _q=quadro_c: _q["i"] * 0.3),
+    "sleep": staticmethod(sleep_c)})()
+main.click_game = lambda x, y, pausa=0.09, botao="esquerdo", mod="": \
+    fita_c.append(("clique", botao))
+main.STOP = False
+saida = io.StringIO()
+with redirect_stdout(saida):
+    main.run_bot()
+n = sum(1 for a in fita_c if a[0] == "clique")
+print(f"  quadrado igual na morte: {n} clique(s) no corpo")
+if n == 0:
+    falhas.append("sem mudanca no quadrado o bot nao fez NADA. O corpo esta "
+                  "onde o bicho foi visto vivo pela ultima vez, e clicar la e "
+                  "sempre melhor do que nao clicar")
 
 print("\nVEREDITO:", "OK - o mesmo saque em stand, chase e kite, com ou sem rota"
       if not falhas else "FALHOU: " + "; ".join(falhas))

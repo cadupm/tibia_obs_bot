@@ -292,32 +292,6 @@ LOOT_TECLA_NUMPAD = True        # mandar tambem a versao do numpad. Sao teclas
                                 # chegava la - e o log nao acusava, porque do
                                 # lado do bot a tecla saia com sucesso. Tecla
                                 # que o cliente nao usa nao faz nada.
-# ACHAR O CORPO NA TELA, em vez de so estimar por odometria. O quadrado onde o
-# bicho estava MUDA quando ele morre (sprite de bicho -> sprite de corpo), e o
-# vizinho que nunca teve bicho continua igual: quem mudou e onde caiu. Nao
-# precisa de tabela de sprite de corpo por especie - o quadro anterior e a
-# referencia.
-LOOT_ACHA_CORPO = True
-LOOT_BUSCA_RAIO = 1             # SQM em volta do palpite onde PROCURAR o corpo
-                                # (1 = os 9 quadrados). Nao e varredura de
-                                # acao: e onde a comparacao olha.
-LOOT_SO_SE_ACHOU = False        # largar o corpo quando a identificacao na tela
-                                # nao fecha. Ligado, o bot nao faz NADA nesses
-                                # casos - e com limiares calibrados em cenario
-                                # sintetico esse era o caso comum, nao a
-                                # excecao: a sprite do bicho e maior que um
-                                # quadrado, entao o vizinho tambem muda e a
-                                # margem sobre o segundo colocado reprova.
-                                # Desligado (padrao), ele clica no PALPITE da
-                                # odometria - ainda UM clique em UM ponto.
-LOOT_DIFF_MIN = 12.0            # diferenca media por pixel para o quadrado
-                                # contar como "mudou". Chao parado da quase
-                                # zero; sair um bicho de cima muda muito.
-LOOT_DIFF_MARGEM = 1.5          # o vencedor tem de mudar este tanto mais que o
-                                # segundo colocado. Sem margem, animacao de
-                                # chao (agua, fogo) ganharia por pouco de um
-                                # quadrado que mudou de verdade.
-
 LOOT_NA_HORA = True             # saquear na hora o corpo que esta COLADO
                                 # (dentro de LOOT_DIST), sem esperar a briga
                                 # acabar. Nao envolve andar, e andar e que troca
@@ -360,7 +334,6 @@ LOOT_SO_MARCADOS = False        # saquear so os monstros marcados na lista.
                                 # so da lixo, e para quem usa o
                                 # auto-aprendizado, que cadastra todo bicho
                                 # novo que aparece.
-
 LOOT_MAX_CORPOS = 12             # corpos na fila de saque. Guardar UM so deixava
                                 # no chao todo bicho da briga menos o ultimo -
                                 # numa caverna se mata em grupo.
@@ -1705,21 +1678,6 @@ class Odometro:
     def falta(self, alvo):
         return alvo[0] - self.pos[0], alvo[1] - self.pos[1]
 
-
-def anel_de_busca():
-    """
-    Os quadrados onde PROCURAR o corpo na tela.
-
-    Separado do anel da varredura de tecla de proposito: desligar a varredura
-    (que e chutar) encolhia tambem a busca (que e medir), e o bot passava a
-    procurar o corpo num quadrado so - justamente o quadrado do palpite que a
-    busca existe para corrigir. Sao duas coisas com o mesmo desenho e razoes
-    opostas.
-    """
-    r = max(LOOT_BUSCA_RAIO, 1)
-    volta = [(dx, dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
-    volta.sort(key=lambda d: (abs(d[0]) + abs(d[1]), abs(d[0]), abs(d[1])))
-    return volta
 
 
 def dentro_da_tela(offset):
@@ -4284,24 +4242,6 @@ def cura_paralisia(teclado, estado, paralisia_cd):
     return True
 
 
-def recorte_do_quadrado(img, offset):
-    """O pedaco da imagem do viewport que corresponde a um quadrado em SQM."""
-    _vx, _vy, vw, vh = GAME_VIEW
-    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
-    x0 = (meio_col + offset[0]) * TILE_PX
-    y0 = (meio_lin + offset[1]) * TILE_PX
-    if x0 < 0 or y0 < 0 or x0 + TILE_PX > img.shape[1] \
-            or y0 + TILE_PX > img.shape[0]:
-        return None
-    return img[y0:y0 + TILE_PX, x0:x0 + TILE_PX]
-
-
-def mudou_quanto(antes, agora):
-    """Diferenca media por pixel entre dois recortes do mesmo tamanho."""
-    if antes is None or agora is None or antes.shape != agora.shape:
-        return 0.0
-    return float(np.abs(antes.astype(np.float32)
-                        - agora.astype(np.float32)).mean())
 
 
 def barras_que_sumiram(havia, agora, andou):
@@ -4436,118 +4376,7 @@ def mortes_na_leitura(antes, agora, saiu_da_lista, odo):
     return [l for l in mortos if l not in fora], False
 
 
-def acha_o_corpo(tela_antes, tela_agora, palpite, andou, onde_havia=()):
-    """
-    Qual quadrado do anel mudou desde que o bicho estava vivo.
 
-    `tela_antes` e o viewport da ultima leitura em que o bicho aparecia,
-    `tela_agora` o de depois da morte confirmada, `palpite` o quadrado estimado
-    por odometria e `andou` quantos SQM o personagem andou entre os dois quadros
-    - e o que alinha as duas imagens, porque o viewport acompanha o personagem
-    e o mesmo lugar do mundo aparece deslocado.
-
-    `onde_havia` sao os quadrados em que HAVIA BICHO na leitura de referencia.
-    Sao os candidatos que importam: o corpo esta onde um bicho estava de pe.
-    Sem eles a busca era um anel de raio 1 em volta do palpite, e numa briga em
-    grupo o palpite e sempre o bicho mais perto - o corpo dos outros, a 4 SQM,
-    ficava fora do alcance da busca e nunca era achado.
-
-    Devolve (quadrado, quanto_mudou, segundo_lugar). Quadrado None quando
-    nenhum candidato mudou o bastante, e ai vale o palpite.
-
-    O criterio e diferenca, e nao reconhecimento de sprite de corpo: sprite de
-    corpo mudaria de especie para especie e precisaria de uma tabela; "este
-    quadrado tinha um bicho e agora esta diferente" vale para qualquer bicho.
-    """
-    notas = notas_dos_quadrados(tela_antes, tela_agora, palpite, andou,
-                                onde_havia)
-    if not notas:
-        return None, 0.0, 0.0
-    melhor, segundo = notas[0], (notas[1] if len(notas) > 1 else (0.0, None))
-    if melhor[0] < LOOT_DIFF_MIN:
-        # nada mudou o bastante: nao ha corpo reconhecivel aqui
-        return None, melhor[0], segundo[0]
-    if segundo[0] > 0 and melhor[0] < segundo[0] * LOOT_DIFF_MARGEM:
-        # EMPATE NAO E IGNORANCIA. Dois quadrados mudando muito e a sprite do
-        # bicho pegando os dois, ou dois bichos morrendo lado a lado - nos dois
-        # casos ha corpo por ali. Antes isso devolvia None e o bot largava o
-        # corpo; agora desempata pelo mais perto do palpite, que e a informacao
-        # independente que se tem.
-        empatados = [q for nota, q in notas if nota >= segundo[0]]
-        perto = min(empatados,
-                    key=lambda q: (abs(q[0] - palpite[0])
-                                   + abs(q[1] - palpite[1])))
-        return perto, melhor[0], segundo[0]
-    return melhor[1], melhor[0], segundo[0]
-
-
-def acha_os_corpos(tela_antes, tela_agora, palpite, andou, onde_havia=(),
-                   quantos=1):
-    """
-    Os `quantos` quadrados que mais mudaram, para VARIAS mortes de uma vez.
-
-    A morte e confirmada TARGET_GONE_READS leituras depois de a entrada sumir
-    da lista. Dois bichos morrendo dentro desse intervalo - com o grupo todo
-    com pouca vida, o caso normal - somem juntos, e o bot marcava UM corpo so:
-    a bandeira de morte e uma, ainda que a contagem soubesse que duas entradas
-    tinham sumido. Aqui cada morte ganha o seu quadrado.
-
-    Devolve a lista dos quadrados acima do limiar, do que mudou mais para o
-    menos, com no maximo `quantos` itens. Vazia quando nada mudou o bastante.
-    """
-    # O PRIMEIRO E O DO acha_o_corpo, e nao o de maior nota crua. Os dois liam
-    # a mesma pontuacao e decidiam diferente: acha_o_corpo desempata pelo mais
-    # perto do palpite quando as notas estao juntas, e aqui era so o maximo. Num
-    # log de cacada com 39 contra 37, o log dizia "corpo em (0,-1)" - a escolha
-    # com desempate - e o bot ia marcar (1,-1), o maximo cru. Falar uma coisa e
-    # fazer outra e pior do que errar: nao da para depurar.
-    escolhido, _n, _s = acha_o_corpo(tela_antes, tela_agora, palpite, andou,
-                                     onde_havia)
-    if escolhido is None:
-        return []
-    notas = notas_dos_quadrados(tela_antes, tela_agora, palpite, andou,
-                                onde_havia)
-    fila = [escolhido]
-    for nota, q in notas:
-        if len(fila) >= max(quantos, 1):
-            break
-        if nota >= LOOT_DIFF_MIN and q not in fila:
-            fila.append(q)
-    return fila
-
-
-def notas_dos_quadrados(tela_antes, tela_agora, palpite, andou, onde_havia=()):
-    """
-    Quanto cada candidato mudou, do que mudou mais para o que mudou menos.
-
-    Separado da escolha porque quem decide precisa de coisas diferentes: para
-    uma morte vale o primeiro colocado; para duas mortes na mesma leitura valem
-    os dois primeiros. A conta e a mesma.
-    """
-    if not LOOT_ACHA_CORPO or tela_antes is None or tela_agora is None:
-        return []
-    # os candidatos: onde havia bicho, e o anel em volta do palpite. O anel
-    # continua porque a barra de vida e desenhada um quadrado acima da criatura
-    # e o arredondamento erra por 1 SQM com o bicho a meio passo.
-    candidatos = []
-    for base in list(onde_havia) + [palpite]:
-        for delta in anel_de_busca():
-            q = (base[0] + delta[0], base[1] + delta[1])
-            if q not in candidatos:
-                candidatos.append(q)
-
-    notas = []
-    for aqui in candidatos:
-        # o MESMO lugar do mundo estava, no quadro antigo, deslocado pelo tanto
-        # que o personagem andou desde entao
-        antes_em = (aqui[0] + andou[0], aqui[1] + andou[1])
-        if not dentro_da_tela(aqui) or not dentro_da_tela(antes_em):
-            continue
-        nota = mudou_quanto(recorte_do_quadrado(tela_antes, antes_em),
-                            recorte_do_quadrado(tela_agora, aqui))
-        notas.append((nota, aqui))
-    notas.sort(reverse=True)
-    return notas
 
 
 def onde_esta_o_corpo(corpo, odo):
@@ -5812,10 +5641,14 @@ def run_bot():
                     # na hora da morte, a ULTIMA leitura em que o bicho que
                     # morreu ainda estava na lista - e nao um numero fixo de
                     # leituras atras, que era um chute.
+                    # O QUADRO NAO VAI MAIS JUNTO. Ele era guardado a cada
+                    # leitura so para a comparacao de imagem, que saiu: a 25
+                    # leituras por segundo era uma copia de 2 MB por leitura,
+                    # para responder uma pergunta que se responde melhor com a
+                    # posicao do bicho.
                     historico.append(
                         (tuple(odo_agora.pos) if odo_agora else (0, 0), perto,
-                         tela if LOOT_ACHA_CORPO else None, tuple(na_tela),
-                         entradas))
+                         None, tuple(na_tela), entradas))
                     del historico[:-(TARGET_GONE_READS + 2)]
             if ENABLE_LOOT and trava.morreu:
                 trava.morreu = False
@@ -5979,31 +5812,26 @@ def run_bot():
                             break
                     if referencia is None:
                         referencia = historico[-1]
-                    visto_em, onde, tela_antes, havia, _e = referencia
-                    # ACHAR NA TELA. O palpite da odometria erra por 1 SQM com
-                    # facilidade, e era por isso que o bot varria o anel por
-                    # tentativa e erro. Comparando o quadrado com como ele
-                    # estava com o bicho vivo, quem MUDOU e o corpo.
+                    visto_em, onde, _quadro, havia, _e = referencia
+                    # ONDE O BICHO ESTAVA, na ultima leitura em que ele ainda
+                    # constava da battle list. Duas perguntas, nesta ordem: que
+                    # barra sumiu de la para ca, e - nao tendo sumido nenhuma -
+                    # onde ele estava.
                     achou = None
-                    if LOOT_ACHA_CORPO and tela_antes is not None:
+                    if True:
                         andado = ((odo_agora.pos[0] - visto_em[0])
                                   / MINIMAP_PX_SQM,
                                   (odo_agora.pos[1] - visto_em[1])
                                   / MINIMAP_PX_SQM) if odo_agora else (0, 0)
                         palpite = (int(round(onde[0] - andado[0])),
                                    int(round(onde[1] - andado[1])))
-                        # os quadrados onde HAVIA BICHO naquela leitura,
-                        # trazidos para o referencial de agora
-                        havia_agora = [(int(round(q[0] - andado[0])),
-                                        int(round(q[1] - andado[1])))
-                                       for q in havia]
                         # A BARRA QUE SUMIU, ANTES DE TUDO. Bicho morto perde
                         # a barra de vida; quadrado que tinha barra e nao tem
                         # mais e onde ele caiu, por definicao. E o mesmo
                         # detector que acha criatura, e a resposta e discreta -
                         # sumiu ou nao - sem limiar para calibrar no ruido.
-                        agora_tela = viewport(leitura)
-                        na_tela_pos = detect_creatures(leitura, img=agora_tela)
+                        na_tela_pos = detect_creatures(leitura,
+                                                       img=tela_agora)
                         # aqui o registro do instante da morte JA FOI
                         # consumido (ou nunca existiu): o que resta e comparar
                         # a leitura de referencia com a de agora
@@ -6013,9 +5841,6 @@ def run_bot():
                         # mesma leitura - grupo todo com pouca vida - e ai sao
                         # dois corpos. A conta da trava sabe quantos foram.
                         quantas_mortes = mortos_agora
-                        andou_px = (int(round(andado[0])),
-                                    int(round(andado[1])))
-                        agora_tela = viewport(leitura)
                         if sumiram:
                             # o sinal direto: barra que existia e nao existe
                             # mais. Sem limiar, sem empate para desfazer.
@@ -6025,46 +5850,29 @@ def run_bot():
                                   f"de vida sumiu em {todos}: e ali que os "
                                   f"corpos estao (palpite era {palpite})")
                         else:
-                            # ninguem sumiu da tela - o bicho morreu fora dela,
-                            # ou a leitura de referencia nao o pegou. Ai vale a
-                            # comparacao de imagem, com o limiar dela.
-                            todos = acha_os_corpos(
-                                tela_antes, agora_tela, palpite, andou_px,
-                                onde_havia=havia_agora,
-                                quantos=quantas_mortes)
-                            achou, nota, segundo = acha_o_corpo(
-                                tela_antes, agora_tela, palpite, andou_px,
-                                onde_havia=havia_agora)
-                            if achou is not None:
-                                print(f"[loot] {quantas_mortes} morte(s); "
-                                      f"nenhuma barra sumiu na tela; pela "
-                                      f"mudanca de imagem o corpo esta em "
-                                      f"{achou} ({nota:.0f} por pixel, segundo "
-                                      f"{segundo:.0f}; palpite era {palpite})"
-                                      + (f" e mais {len(todos) - 1} "
-                                         f"quadrado(s) {todos[1:]}"
-                                         if len(todos) > 1 else ""))
-                            else:
-                                print(f"[loot] nenhuma barra sumiu e nenhum "
-                                  f"quadrado mudou o bastante (maior "
-                                  f"{nota:.0f}, limiar {LOOT_DIFF_MIN:.0f})"
-                                  + (": LARGO O CORPO porque "
-                                     "LOOT_SO_SE_ACHOU esta ligado (desligue "
-                                     "para clicar no palpite em vez de nao "
-                                     "fazer nada)" if LOOT_SO_SE_ACHOU
-                                     else f": clico no palpite {palpite}"))
+                            # NINGUEM SUMIU DA TELA. Sobra o lugar em que ele
+                            # foi visto vivo pela ultima vez, que e a definicao
+                            # de onde ele morreu.
+                            #
+                            # Aqui houve uma comparacao de imagem - "qual
+                            # quadrado mudou mais de cor desde que ele estava
+                            # vivo" - e ela nunca acertou melhor do que isto.
+                            # Num log de cacada, duas mortes seguidas: corpo
+                            # posto em (0,3) e (0,4) com o palpite em (0,1),
+                            # dois e tres quadrados abaixo do bicho. Numa
+                            # anterior, 14 contra 12 de limiar 12, pondo corpo
+                            # a 5 SQM num modo corpo a corpo. Mudanca de cor
+                            # nao e a mesma pergunta que "onde o bicho estava".
+                            todos, achou = [palpite], palpite
+                            print(f"[loot] {quantas_mortes} morte(s); nenhuma "
+                                  f"barra sumiu na tela; o corpo esta onde ele "
+                                  f"foi visto vivo pela ultima vez: {palpite}")
                     if achou is not None:
                         for quadrado_corpo in (todos or [achou]):
                             marca_o_corpo(caminho, quadrado_corpo, odo_agora,
                                           na_tela=True)
-                    elif LOOT_ACHA_CORPO and LOOT_SO_SE_ACHOU:
-                        # com LOOT_SO_SE_ACHOU ligado, nao age sem certeza
-                        pass
                     else:
-                        # DEGRADAR, NAO DESISTIR. Sem separar o quadrado na
-                        # tela, vale o palpite da odometria: ainda e UM clique
-                        # em UM ponto, e nao fazer nada e pior do que clicar no
-                        # lugar mais provavel.
+                        # sem nem palpite: vale a posicao da odometria
                         marca_o_corpo(caminho, onde, odo_agora,
                                       visto_em=visto_em)
 

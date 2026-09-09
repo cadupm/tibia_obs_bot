@@ -179,7 +179,6 @@ def roda(sobrevivente, intruso=False):
     main.ENABLE_PARALISIA = False
     main.ENABLE_LOOT = True
     main.LOOT_SO_MARCADOS = False
-    main.LOOT_SO_SE_ACHOU = False
     main.ATTACK_CONFIRM = 2
     main.STOP = False
 
