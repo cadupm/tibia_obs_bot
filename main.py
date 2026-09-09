@@ -561,11 +561,22 @@ KITE_DIAGONAIS = False          # As diagonais do teclado numerico NAO moveram o
                                 # tecla (com NumLock ligado costuma funcionar).
 
 # O VIEWPORT do jogo, em offsets de cliente, e o tamanho do quadrado na tela.
-# Medido no cliente 1920x1009 do usuario: a area com textura comeca em (221,61)
-# e a grade de 15x11 quadrados de 68px fecha exatamente nas bordas (1241, 809).
-# Confira no seu layout com "python main.py --kite", que imprime o que enxerga.
-GAME_VIEW = (221, 61, 15 * 68, 11 * 68)
-TILE_PX = 68                    # px por SQM na tela do jogo
+#
+# MEDIDO, e nao estimado de olho. O tamanho do quadrado saiu de um passo do
+# personagem: ele fica sempre no meio da tela, entao andar um quadrado rola a
+# cena inteira em exatamente um quadrado. No cliente 1920x1009 do usuario deu
+# 64 px, com o passo de volta fechando em 0 px de diferenca. A area de jogo vai
+# de x 250 a 1209 e de y 61 a 764 - 960 x 704, que e 15 x 11 quadrados de 64.
+#
+# Ja esteve (221, 61, 1020, 748) com 68 px, estimado pela textura da tela, e o
+# estrago era proporcional a distancia: 4 px de erro por quadrado. Ao lado do
+# personagem nao aparece; a 7 quadrados sao 28 px, quase meio quadrado, e o
+# clique cai no vizinho. Em cacada isso se via como "as vezes acerta o clique e
+# nao looteia, as vezes erra o clique e looteia outro".
+#
+# Confira no seu layout com "python main.py --grade", que mede os dois.
+GAME_VIEW = (250, 61, 15 * 64, 11 * 64)
+TILE_PX = 64                    # px por SQM na tela do jogo
 # A barrinha de vida sobre a criatura, medida na captura da cave: moldura de
 # preto puro com 31 px de largura e 4 de altura, com 2 linhas de preenchimento
 # colorido dentro. A moldura nao encurta com o dano.
@@ -996,6 +1007,58 @@ def grab(region):
     with mss.MSS() as sct:
         shot = sct.grab({"left": x, "top": y, "width": w, "height": h})
     return np.asarray(shot)[:, :, [2, 1, 0]]      # BGRA -> RGB
+
+
+GW_HWNDNEXT = 2
+GWL_EXSTYLE = -20
+WS_EX_TRANSPARENT = 0x20          # overlay que deixa o clique passar
+
+
+def quem_tapa(leitura, teclado=None, minimo=0.01):
+    """
+    Janelas visiveis POR CIMA da area de captura, com quanto de area cada uma
+    tapa.
+
+    grab() captura uma regiao da TELA, e nao o conteudo de uma janela: o que
+    estiver desenhado por cima entra no lugar do jogo. O painel de controle
+    aberto sobre o projetor virou um terco da area de jogo numa cacada, com
+    botoes no lugar de quadrados - e nada no log dizia isso.
+
+    O jogo nao conta: em modo OBS ele fica na frente DE PROPOSITO, transparente,
+    so para receber as teclas. Overlay que deixa o clique passar (NVIDIA,
+    Discord) tambem nao conta: e desenho por cima do desktop, nao janela opaca.
+
+    Devolve [(titulo, fracao da area tapada)], da que mais tapa para a que
+    menos tapa.
+    """
+    alvo = getattr(leitura, "_hWnd", None)
+    if alvo is None or not user32.IsWindow(alvo):
+        return []                      # janela de mentira (teste) ou ja fechada
+    poupar = {alvo}
+    if getattr(teclado, "_hWnd", None) is not None:
+        poupar.add(teclado._hWnd)
+    x, y, w, h = client_rect(leitura)
+    if w <= 0 or h <= 0:
+        return []
+    tapando, hwnd = [], user32.GetTopWindow(None)
+    while hwnd and hwnd != alvo:
+        seguinte = user32.GetWindow(hwnd, GW_HWNDNEXT)
+        if (hwnd not in poupar and user32.IsWindowVisible(hwnd)
+                and not user32.IsIconic(hwnd)
+                and not (user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                         & WS_EX_TRANSPARENT)):
+            r = wt.RECT()
+            if user32.GetWindowRect(hwnd, ctypes.byref(r)):
+                largura = max(0, min(r.right, x + w) - max(r.left, x))
+                altura = max(0, min(r.bottom, y + h) - max(r.top, y))
+                fatia = (largura * altura) / float(w * h)
+                if fatia >= minimo:
+                    nome = ctypes.create_unicode_buffer(256)
+                    user32.GetWindowTextW(hwnd, nome, 256)
+                    if nome.value.strip():
+                        tapando.append((nome.value.strip(), fatia))
+        hwnd = seguinte
+    return sorted(tapando, key=lambda t: -t[1])
 
 
 def to_screen(win, offset):
@@ -3088,6 +3151,73 @@ def cast_spell(alvo, mana, spell_cd, nao_antes_de=0.0):
     return True
 
 
+def mede_a_area_de_jogo(leitura):
+    """
+    Onde a area de jogo comeca e acaba, medida na tela.
+
+    A area de jogo tem TEXTURA e os paineis em volta sao lisos, entao a conta e
+    o desvio-padrao por coluna e por linha: o maior trecho continuo de variacao
+    e o viewport. Nao depende de cor, de tema nem de resolucao.
+
+    Devolve (x, y, largura, altura) em offsets de cliente, ou None.
+    """
+    try:
+        cx, cy, cw, ch = client_rect(leitura)
+        if cw <= 0 or ch <= 0:
+            return None
+        im = grab((cx, cy, cw, ch)).astype(np.int16)
+    except Exception:
+        return None
+
+    def trecho(v, limite=8.0):
+        maior, inicio, melhor = 0, None, (0, -1)
+        for i, alto in enumerate(list(v > limite) + [False]):
+            if alto and inicio is None:
+                inicio = i
+            elif not alto and inicio is not None:
+                if i - inicio > maior:
+                    maior, melhor = i - inicio, (inicio, i - 1)
+                inicio = None
+        return melhor
+
+    vx, vy, vw, vh = GAME_VIEW
+    faixa_y = slice(max(vy + 60, 0), min(vy + vh - 60, im.shape[0]))
+    faixa_x = slice(max(vx + 150, 0), min(vx + vw - 150, im.shape[1]))
+    x0, x1 = trecho(im[faixa_y].std(axis=(0, 2)))
+    y0, y1 = trecho(im[:, faixa_x].std(axis=(1, 2)))
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return (x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+
+
+def confere_a_grade(leitura):
+    """
+    Avisa quando GAME_VIEW nao bate com a area de jogo que esta na tela.
+
+    Grade errada nao da erro nenhum: ela so poe cada quadrado alguns pixels
+    fora do lugar, e o erro cresce com a distancia ao personagem. Foi assim que
+    o bot passou a caçada inteira clicando no quadrado vizinho do corpo sem que
+    nada no log dissesse por que.
+    """
+    medida = mede_a_area_de_jogo(leitura)
+    if medida is None:
+        return
+    vx, vy, vw, vh = GAME_VIEW
+    mx, my, mw, mh = medida
+    if (abs(mx - vx) <= 2 and abs(my - vy) <= 2
+            and abs(mw - vw) <= 2 and abs(mh - vh) <= 2):
+        print(f"[setup] grade conferida: area de jogo em {medida}, "
+              f"{mw // (vw // TILE_PX)}px por quadrado")
+        return
+    colunas, linhas = vw // TILE_PX, vh // TILE_PX
+    print(f"[warn] a area de jogo na tela e {medida}, e GAME_VIEW diz "
+          f"{GAME_VIEW}. Com {colunas}x{linhas} quadrados isso da "
+          f"{mw / colunas:.1f}x{mh / linhas:.1f} px por quadrado, e TILE_PX "
+          f"esta {TILE_PX}. Cada quadrado sai fora do lugar, e o erro cresce "
+          f"com a distancia - o clique no corpo cai no vizinho. Meça com "
+          f"'python main.py --grade'.")
+
+
 def viewport(leitura):
     """A imagem da area do jogo. Uma captura, para quem precisa dela inteira."""
     vx, vy, vw, vh = GAME_VIEW
@@ -5008,6 +5138,11 @@ def run_bot():
 
     print(f"Bot iniciado: lendo de '{leitura.title}', teclas em '{teclado.title}'.")
     print("Ctrl+Alt+S para parar.")
+    # A GRADE PRIMEIRO. Errada, ela nao da erro nenhum: so poe cada quadrado
+    # alguns pixels fora do lugar, com o desvio crescendo conforme a distancia
+    # ao personagem. Uma cacada inteira clicando no quadrado vizinho do corpo
+    # passou sem que nada no log dissesse por que.
+    confere_a_grade(leitura)
     if ATTACK_MODE == "stand":
         print(f"[luta] modo stand: paro com {STOP_WALK_KEY} e nao saio do lugar")
     elif ATTACK_MODE == "chase":
@@ -5096,6 +5231,30 @@ def run_bot():
                 if leitura_nova and teclado_nova:
                     leitura, teclado = leitura_nova, teclado_nova
                 continue
+
+            # JANELA POR CIMA DA AREA DE CAPTURA e leitura envenenada: o
+            # bot estaria olhando para os pixels dela achando que sao o jogo.
+            # Nao se age sobre isso - clicar num quadrado que na verdade e um
+            # botao do painel e pior do que nao clicar.
+            # a conferencia e uma varredura de janelas: barata, mas nao a cada
+            # leitura. Uma vez por segundo e de sobra para um painel que
+            # alguem abriu por cima.
+            volta = caminho["olhou_tapado"] = caminho.get("olhou_tapado", 0) + 1
+            if volta % 8 == 1:
+                caminho["tapando"] = quem_tapa(leitura, teclado)
+            tapando = caminho.get("tapando") or []
+            if tapando:
+                qual = ", ".join(f"'{t}' ({f:.0%})" for t, f in tapando[:3])
+                if caminho.get("avisou_tapado") != qual:
+                    caminho["avisou_tapado"] = qual
+                    print(f"[warn] {qual} esta por cima da area de captura: o "
+                          f"bot leria os pixels dela como se fossem o jogo. "
+                          f"Parado ate destapar.")
+                time.sleep(0.5)
+                continue
+            if caminho.get("avisou_tapado"):
+                caminho["avisou_tapado"] = None
+                print("[warn] area de captura desimpedida; voltando")
 
             # nunca enviar teclas se o jogo nao estiver em foco
             if not teclado.isActive:

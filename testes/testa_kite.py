@@ -29,6 +29,14 @@ AMOSTRA = AQUI + "tela_cave.png"     # PNG e nao npy: um terco do tamanho, e
 if os.path.exists(AMOSTRA):          # ja exercita o leitor do png.py
     import png
     tela = png.le(AMOSTRA)
+    # A AMOSTRA TEM A GEOMETRIA DA EPOCA EM QUE FOI TIRADA, e nao a do cliente
+    # de hoje: 15x11 quadrados de 68px comecando em (221,61). Ler pixel antigo
+    # com grade nova poe as criaturas em quadrados que nao sao os delas, e o
+    # teste passaria a medir a diferenca entre dois layouts em vez da deteccao.
+    # As constantes do projeto sao MEDIDAS no cliente atual (python main.py
+    # --grade); aqui vale a da foto.
+    guardado = (main.GAME_VIEW, main.TILE_PX)
+    main.GAME_VIEW, main.TILE_PX = (221, 61, 15 * 68, 11 * 68), 68
     vx, vy, vw, vh = main.GAME_VIEW
     cheio = np.zeros((vh, vw, 3), dtype=tela.dtype)   # a amostra e um recorte
     pedaco = tela[vy:vy + vh, vx:vx + vw]
@@ -53,6 +61,7 @@ if os.path.exists(AMOSTRA):          # ja exercita o leitor do png.py
     if depois <= main.longe_o_bastante(achadas):
         falhas.append(f"fuga na captura: {passo} nao afasta "
                       f"({main.longe_o_bastante(achadas)} -> {depois})")
+    main.GAME_VIEW, main.TILE_PX = guardado
 else:
     print(f"(sem {os.path.basename(AMOSTRA)}: a parte de deteccao nao roda)")
 
