@@ -4578,9 +4578,15 @@ def foto_da_morte(img, quadrados):
         for q in quadrados:
             moldura(q[0], q[1], (255, 0, 0))          # o corpo escolhido
             moldura(q[0], q[1], (255, 255, 0), 2, 26)  # o pixel do clique
-        arquivo = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "ultima_morte.png")
+        pasta = os.path.dirname(os.path.abspath(__file__))
+        arquivo = os.path.join(pasta, "ultima_morte.png")
         mss.tools.to_png(tela.tobytes(), (vw, vh), output=arquivo)
+        # O QUADRO CRU VAI JUNTO. Sobre o desenhado nao da para rodar a
+        # deteccao de novo - as linhas da grade viram pixel colorido e mudam o
+        # que ela acha. Sem o cru, conferir uma escolha exige outra cacada.
+        mss.tools.to_png(
+            np.ascontiguousarray(img.astype(np.uint8)).tobytes(), (vw, vh),
+            output=os.path.join(pasta, "ultima_morte_cru.png"))
         print(f"[loot] foto do instante da morte em {arquivo}: ciano e o "
               f"personagem, vermelho o quadrado escolhido para o corpo")
     except Exception as erro:                # foto nao derruba cacada
