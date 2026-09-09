@@ -1037,6 +1037,7 @@ class Painel:
             return
         self.aplicar()
         main.STOP = False
+        self.sai_da_frente()
         self.escreve_log("[gui] iniciando; o foco vai para o jogo")
         self.thread_bot = threading.Thread(target=self._roda_bot, daemon=True)
         self.thread_bot.start()
@@ -1058,10 +1059,56 @@ class Painel:
         finally:
             sys.stdout, sys.stderr = antigo, antigo_err
             main.restore_windows()
+            # O PAINEL VOLTA SOZINHO. Ele so volta pelo botao Parar quando e
+            # voce quem para; parando pela tecla de parada ou por erro, ficaria
+            # atras das outras janelas sem ninguem pedir. Pelo after porque
+            # mexer em widget de outra thread trava o Tk.
+            self.raiz.after(0, self.volta_para_frente)
+            self.raiz.after(0, self._bot_parou)
             self.fila_log.put("[gui] bot encerrado")
+
+    def _bot_parou(self):
+        """Botoes de volta ao normal quando o bot para sozinho."""
+        self.btn_parar.config(state="disabled")
+        self.btn_iniciar.config(state="normal")
+        self.lbl_bot.config(text="bot parado", foreground="#a33")
+
+    def sai_da_frente(self):
+        """
+        Tira o painel de cima da area de captura enquanto o bot roda.
+
+        grab() captura uma REGIAO DA TELA: o que estiver desenhado por cima
+        entra no lugar do jogo. Este painel e topmost e nasce no canto de cima
+        a esquerda, ou seja, em cima da area de jogo - numa cacada ele virou um
+        terco dela, com botoes no lugar de quadrados. O bot detecta e para, o
+        que deixava impossivel comecar pelo proprio painel.
+
+        O projetor e o jogo ficam topmost enquanto o bot roda, entao basta o
+        painel deixar de ser: ele vai para tras dos dois e a captura fica
+        limpa. Continua vivo - alt-tab, ou parar pela tecla de parada - e o log
+        da sessao vai para bot.log de qualquer jeito.
+        """
+        try:
+            self.raiz.attributes("-topmost", False)
+            self.raiz.lower()
+        except tk.TclError:
+            return
+        self.escreve_log("[gui] painel para tras enquanto o bot roda: por cima "
+                         "da area de jogo ele entraria na captura. O log "
+                         "continua em bot.log; pare com "
+                         f"{main.KILL_KEY} ou traga o painel de volta")
+
+    def volta_para_frente(self):
+        """Devolve o painel para a frente quando o bot para."""
+        try:
+            self.raiz.attributes("-topmost", True)
+            self.raiz.lift()
+        except tk.TclError:
+            pass
 
     def parar(self):
         main.STOP = True
+        self.volta_para_frente()
         self.btn_parar.config(state="disabled")
         self.btn_iniciar.config(state="normal")
         self.lbl_bot.config(text="bot parado", foreground="#a33")
