@@ -128,6 +128,8 @@ ABAS = [
              "shift, ctrl, alt ou vazio"),
             ("LOOT_CLIQUES", "Cliques por corpo", int,
              "1 basta: clicou nele, esta saqueado"),
+            ("LOOT_ANDA_CLICANDO", "Andar clicando no quadrado do corpo", bool,
+             "sem escala de minimapa para errar e passar do corpo"),
             ("LOOT_NA_HORA", "Saquear na hora o que esta colado", bool,
              "sem esperar a briga: clicar ao lado nao e movimento"),
             ("LOOT_ANTES_DE_ATACAR", "Saquear antes do proximo bicho", bool,

@@ -309,6 +309,18 @@ LOOT_DIFF_MARGEM = 1.5          # o vencedor tem de mudar este tanto mais que o
                                 # chao (agua, fogo) ganharia por pouco de um
                                 # quadrado que mudou de verdade.
 
+LOOT_ANDA_CLICANDO = True       # chegar no corpo CLICANDO no quadrado dele na
+                                # tela do jogo, e nao clicando no minimapa. O
+                                # clique de minimapa converte SQM em pixel por
+                                # MINIMAP_PX_SQM, e escala errada faz o
+                                # personagem PASSAR DO CORPO - relatado em
+                                # cacada: "vai na direcao certa mas passa a
+                                # mais muitas vezes". Na tela do jogo nao ha
+                                # escala para errar: o quadrado tem TILE_PX de
+                                # lado e o pixel do centro sai direto. Fora da
+                                # area do jogo nao ha quadrado para clicar, e
+                                # ai o minimapa volta a valer.
+
 LOOT_NA_HORA = True             # saquear na hora o corpo que esta COLADO
                                 # (dentro de LOOT_DIST), sem esperar a briga
                                 # acabar. Nao envolve andar, e andar e que troca
@@ -4288,6 +4300,24 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
             return True
         if not loot_cd.ready():
             return True
+
+        # ANDAR CLICANDO NO PROPRIO QUADRADO, na tela do jogo. O clique no
+        # minimapa converte SQM em pixel por MINIMAP_PX_SQM, e escala errada
+        # faz o personagem PASSAR DO CORPO: com a escala configurada maior que
+        # a real, cada clique viaja mais SQM do que se pediu. Na tela do jogo
+        # nao ha escala para errar - o quadrado tem TILE_PX de lado e o pixel
+        # do centro dele e calculado direto. O cliente acha o caminho.
+        quadrado = (int(round(onde[0])), int(round(onde[1])))
+        if LOOT_ANDA_CLICANDO and dentro_da_tela(quadrado):
+            x, y = ponto_do_quadrado(leitura, quadrado)
+            click_game(x, y, botao="esquerdo")
+            loot_cd.mark()
+            print(f"[loot] corpo a {distancia:.0f} SQM: ando clicando no "
+                  f"quadrado {quadrado} da tela ({x}, {y})")
+            return True
+
+        # fora da area do jogo nao ha quadrado para clicar; ai vale o minimapa,
+        # com a escala dele
         passo = (int(round(onde[0] * MINIMAP_PX_SQM)),
                  int(round(onde[1] * MINIMAP_PX_SQM)))
         if abs(passo[0]) + abs(passo[1]) == 0:
@@ -4300,8 +4330,8 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
             return bool(corpos)
         click_minimap(leitura, passo)
         loot_cd.mark()
-        print(f"[loot] corpo a {distancia:.0f} SQM: ando ate ele "
-              f"(clique de {passo} px no minimapa)")
+        print(f"[loot] corpo a {distancia:.0f} SQM, fora da tela do jogo: "
+              f"ando pelo minimapa (clique de {passo} px)")
         return True
 
     if not loot_cd.ready():

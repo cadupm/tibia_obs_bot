@@ -65,8 +65,26 @@ def clica_mapa(_win, passo):
 mirado = []
 main.click_minimap = clica_mapa
 main.client_rect = lambda win: (0, 0, 1920, 1009)
-main.click_game = lambda x, y, pausa=0.09, botao="esquerdo", mod="": \
+def clica_jogo(x, y, pausa=0.09, botao="esquerdo", mod=""):
+    """
+    Clique na tela do jogo, como o cliente responderia.
+
+    O ESQUERDO ANDA. O bot passou a se aproximar do corpo clicando no quadrado
+    dele na tela, em vez de clicar no minimapa - sem escala para errar. Um
+    falso que so REGISTRA o clique deixa o personagem parado, e o teste passa a
+    medir um bot que nunca chega: 17 cliques para um corpo a 2 SQM.
+    """
     acoes.append(("clique", botao, mod, (x, y)))
+    if botao == "esquerdo":
+        vx, vy, vw, vh = main.GAME_VIEW
+        mc, ml = (vw // main.TILE_PX) // 2, (vh // main.TILE_PX) // 2
+        off = (round((x - vx) / main.TILE_PX - 0.5 - mc),
+               round((y - vy) / main.TILE_PX - 0.5 - ml))
+        odo.pos[0] += off[0] * main.MINIMAP_PX_SQM
+        odo.pos[1] += off[1] * main.MINIMAP_PX_SQM
+
+
+main.click_game = clica_jogo
 main.focus_window = lambda win: True
 main.pyautogui = type("P", (), {
     "press": staticmethod(lambda t: acoes.append(("tecla", t)))})()
@@ -91,7 +109,20 @@ def zera(pos=(0, 0)):
 
 
 def cliques():
-    return [a for a in acoes if a[0] == "clique"]
+    """
+    Os cliques de SAQUE: os do botao configurado, no corpo.
+
+    O clique de aproximacao e do botao ESQUERDO e serve para ANDAR ate o
+    quadrado. Contar os dois juntos misturava "cheguei" com "saqueei".
+    """
+    return [a for a in acoes
+            if a[0] == "clique" and a[1] == main.LOOT_BOTAO]
+
+
+def cliques_de_andar():
+    """Os cliques de aproximacao: clique no quadrado da tela para caminhar."""
+    return [a for a in acoes
+            if a[0] == "clique" and a[1] != main.LOOT_BOTAO]
 
 
 def teclas_de_saque():
@@ -121,10 +152,12 @@ for modo, dist in (("stand", 1), ("chase", 2), ("kite", main.KITE_DIST)):
     estado = zera()
     main.marca_o_corpo(estado, (dist, 0), odo, na_tela=True)
     acabou = saqueia_ate_o_fim(estado)
-    andou = [a for a in acoes if a[0] == "mapa"]
+    # andar e clique no quadrado da tela (o normal) ou no minimapa (corpo fora
+    # da area do jogo); as duas formas contam como "foi ate ele"
+    andou = [a for a in acoes if a[0] == "mapa"] + cliques_de_andar()
     gestos[modo] = (len(cliques()), len(teclas_de_saque()))
-    print(f"  {modo:<6} (corpo a {dist} SQM): {len(andou)} clique(s) de mapa "
-          f"para chegar, {len(cliques())} clique(s) no corpo, "
+    print(f"  {modo:<6} (corpo a {dist} SQM): {len(andou)} passo(s) para "
+          f"chegar, {len(cliques())} clique(s) no corpo, "
           f"{len(teclas_de_saque())} tecla(s), terminou={acabou}")
     if not acabou:
         falhas.append(f"{modo}: nao terminou o saque")

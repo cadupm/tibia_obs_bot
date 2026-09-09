@@ -59,6 +59,18 @@ serve de freio de mão.
 lutar: acontece **depois** da briga e é **igual** em stand, chase e kite. O modo
 de luta muda de onde se parte, não o que se faz com o corpo.
 
+**Chegar no corpo é clicar no quadrado dele na tela do jogo** (`LOOT_ANDA_CLICANDO`),
+e não clicar no minimapa. O clique de minimapa converte SQM em pixel por
+`MINIMAP_PX_SQM` — um número que se mede à mão com `--zoom` e que muda com o zoom
+do jogo. Relatado em caçada: *"vai na direção certa mas passa a mais muitas
+vezes"*. Na tela do jogo não há escala para errar: o quadrado tem `TILE_PX` de
+lado e o pixel do centro sai de uma conta fechada, e o cliente acha o caminho.
+Fora da área do jogo não existe quadrado para clicar, e aí o minimapa volta a
+valer.
+
+Medido: com `MINIMAP_PX_SQM` em 1, 2 ou 4, o clique de aproximação cai **no mesmo
+pixel** — um caminho que não lê esse número não erra por causa dele.
+
 O gesto cabe numa frase: **chegar no corpo e clicar nele com o botão direito.**
 No Tibia o direito sobre um corpo saqueia — sabendo que clicou nele, está feito,
 e não há o que conferir depois. O esquerdo só manda o personagem andar para lá.
@@ -586,6 +598,12 @@ O código está comentado com o *porquê* de cada uma delas.
   procurava o corpo só no quadrado do palpite, justamente o erro que a busca
   existe para corrigir. Um teste guarda a distinção; o resto foi removido.
 
+- **Falso que só registra não simula.** O `click_game` de mentira do teste do
+  loot apenas anotava o clique. Quando a aproximação passou a ser um clique no
+  quadrado da tela, o personagem do teste ficou parado e o teste passou a medir
+  um bot que nunca chega — 17 cliques para um corpo a 2 SQM. Um dublê de ação
+  precisa produzir a **consequência** da ação, não só o registro dela.
+
 - **Um número fixo de leituras atrás é um chute, e chute passa em teste por
   coincidência.** A referência para localizar o corpo era "quatro leituras
   atrás". Isso acertava quando sobrava bicho na battle list (o histórico
@@ -794,6 +812,7 @@ python testes/testa_loot_escolhido.py # ataca todos, saqueia só os escolhidos
 python testes/testa_calibra_barra.py  # a barra do personagem calibra a conversão barra->quadrado
 python testes/testa_barra_sumiu.py    # o corpo está onde uma barra de vida desapareceu
 python testes/testa_corpo_onde_morreu.py  # o corpo sai onde ele morreu, não onde foi engajado
+python testes/testa_loot_precisao.py  # a aproximação cai no pixel do quadrado, sem escala
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI
