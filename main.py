@@ -334,6 +334,13 @@ LOOT_SO_MARCADOS = False        # saquear so os monstros marcados na lista.
                                 # so da lixo, e para quem usa o
                                 # auto-aprendizado, que cadastra todo bicho
                                 # novo que aparece.
+LOOT_APROXIMACOES = 3             # quantas vezes mandar o personagem ate o
+                                # mesmo corpo antes de desistir. E o unico
+                                # limite que nao depende de leituras
+                                # consecutivas: numa caverna movimentada a
+                                # briga corta o tempo o tempo todo, e um limite
+                                # por tempo nunca vence - o corpo fica imortal
+                                # e a rota parada atras dele.
 LOOT_MAX_CORPOS = 12             # corpos na fila de saque. Guardar UM so deixava
                                 # no chao todo bicho da briga menos o ultimo -
                                 # numa caverna se mata em grupo.
@@ -4539,7 +4546,19 @@ def saqueia_corpo(leitura, teclado, estado, loot_cd, corpo, odo=None):
         focus_window(teclado)
 
     if not corpo.get("clicou"):
+        # CADA APROXIMACAO CONTA. E o unico limite que nao depende de leituras
+        # consecutivas: numa caverna movimentada a briga corta o tempo o tempo
+        # todo, os dois prazos por tempo nunca avancam, e o corpo fica imortal
+        # segurando a rota. Tres vezes mandando o personagem ir ate la sem
+        # chegar e o bastante para desistir dele.
+        corpo["tentativas"] = corpo.get("tentativas", 0) + 1
+        if corpo["tentativas"] > LOOT_APROXIMACOES:
+            print(f"[loot] {corpo['tentativas'] - 1} aproximacao(oes) ate o "
+                  f"corpo em {quadrado} e ele continua a {distancia:.0f} SQM; "
+                  f"largo ele e sigo a rota")
+            return True, False
         corpo["clicou"], corpo["desde_o_clique"] = True, 0
+        corpo["pos_no_clique"] = tuple(odo.pos) if odo is not None else None
         n, teclas = clica_no_corpo(leitura, quadrado, teclado, distancia,
                                    lutando=estado.get("lutando", False))
         loot_cd.mark()
@@ -4559,7 +4578,13 @@ def saqueia_corpo(leitura, teclado, estado, loot_cd, corpo, odo=None):
     # caminhada que o clique pediu, o personagem esta tao perto quanto vai
     # ficar, e nao ha o que esperar.
     corpo["desde_o_clique"] = corpo.get("desde_o_clique", 0) + 1
-    parou = (odo is not None and corpo["desde_o_clique"] >= 3
+    # "PAROU DE ANDAR" SO VALE SE ELE TIVER ANDADO. Sem exigir isso, um clique
+    # que o cliente ignorou - corpo atras de parede, caminho bloqueado - conta
+    # como chegada: o bot manda a tecla de saque a 4 SQM do corpo, no vazio, e
+    # ainda risca o corpo da fila como se tivesse pegado.
+    andou = (odo is not None and corpo.get("pos_no_clique") is not None
+             and tuple(odo.pos) != corpo["pos_no_clique"])
+    parou = (odo is not None and corpo["desde_o_clique"] >= 3 and andou
              and odo.parado >= WALK_STOP_TICKS)
     if distancia <= LOOT_TECLA_DIST or parou:
         # O GESTO INTEIRO OUTRA VEZ, e nao so a tecla. O clique de longe pode
@@ -4673,21 +4698,18 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     if not ENABLE_LOOT or not corpos:
         return False
 
-    # CORPO VELHO DEMAIS nao vale a viagem: ele ficou para tras na rota. Mas o
-    # que envelhece e o tempo em que o bot esteve LIVRE para ir busca-lo, e nao
-    # o relogio de parede - loot() so e chamado com a battle list limpa, entao
-    # somar so entre chamadas consecutivas exclui a briga. Contado no relogio,
-    # uma briga longa vencia o prazo dos primeiros corpos enquanto ela ainda
-    # acontecia, e ao terminar o bot largava o que nunca teve chance de buscar.
+    # CORPO VELHO DEMAIS nao vale a viagem: ele ficou para tras na rota.
+    #
+    # E o RELOGIO DE PAREDE mesmo. Ja contou so o tempo "livre", somado entre
+    # chamadas consecutivas, para que uma briga longa nao custasse o corpo - e
+    # o efeito foi o oposto do pretendido: numa caverna movimentada as chamadas
+    # nunca sao consecutivas, a conta nao avanca, e o corpo fica imortal
+    # segurando a rota, que e o que loot() devolvendo True faz.
     agora = time.time()
-    for c in corpos:
-        if c.get("livre_em") is not None and agora - c["livre_em"] <= 2.0:
-            c["livre"] = c.get("livre", 0.0) + (agora - c["livre_em"])
-        c["livre_em"] = agora
-    for velho in [c for c in corpos if c.get("livre", 0.0) > LOOT_VALIDADE]:
+    for velho in [c for c in corpos if agora - c["desde"] > LOOT_VALIDADE]:
         corpos.remove(velho)
-        print(f"[loot] {velho['livre']:.0f}s livres sem conseguir recolher "
-              f"este corpo; ficou para tras na rota e largo ele")
+        print(f"[loot] corpo de {agora - velho['desde']:.0f}s atras ficou para "
+              f"tras na rota; largo ele")
     if not corpos:
         return False
 
