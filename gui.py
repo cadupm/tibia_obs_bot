@@ -30,6 +30,7 @@ import os
 import queue
 import sys
 import threading
+import traceback
 import tkinter as tk
 from tkinter import simpledialog
 from tkinter import ttk
@@ -88,14 +89,6 @@ ABAS = [
             ("PARAR_SE_MUDAR_ANDAR", "Parar se mudar de andar", bool,
              "caiu em escada ou buraco: para tudo"),
         ]),
-        ("Paralisia", "ENABLE_PARALISIA", [
-            ("PARALISIA_HOTKEY", "Magia que cura", str,
-             "exura ou utani hur: as duas tiram paralisia"),
-            ("PARALISIA_LADOS", "Lados travados p/ suspeitar", int,
-             "pedra e de um lado; paralisia e de todos"),
-            ("PARALISIA_COOLDOWN", "Intervalo entre tentativas", float,
-             "segundos"),
-        ]),
         ("Loot", "ENABLE_LOOT", [
             ("LOOT_HOTKEY", "Tecla de saque", str,
              "a do saque rapido, no cliente"),
@@ -140,6 +133,20 @@ ABAS = [
         ("Autocast", "ENABLE_AUTOCAST", [
             ("AUTOCAST_MANA_FLOOR", "Nao conjurar abaixo de", float, PONTOS),
         ]),
+        # Aqui e nao no Combate: e magia que o bot conjura sozinho, como o
+        # resto desta aba. O gatilho e que difere - as de baixo saem por tempo,
+        # esta sai quando TODO lado parece parede, que e o que a paralisia faz
+        # o personagem sentir.
+        ("Curar paralisia", "ENABLE_PARALISIA", [
+            ("PARALISIA_HOTKEY", "Magia que cura", str,
+             "exura ou utani hur: as duas tiram paralisia"),
+            ("PARALISIA_LADOS", "Lados travados p/ suspeitar", int,
+             "pedra e de um lado; paralisia e de todos"),
+            ("PARALISIA_FALHAS", "Passos seguidos sem sair do lugar", int,
+             "o sinal rapido, em vez de esperar cada lado"),
+            ("PARALISIA_COOLDOWN", "Intervalo entre tentativas", float,
+             "segundos"),
+        ]),
     ]),
     ("Setup", [
         ("Leitura da tela", "OBS_MODE", [
@@ -154,20 +161,39 @@ ABAS = [
 
 
 class FilaDeSaida:
-    """Captura o print do bot para o log do painel."""
+    """
+    Captura o print do bot para o log do painel.
+
+    SEM CONSOLE, `original` e None. Aberto por atalho ou com pythonw - que e o
+    jeito natural de rodar um painel, sem janela preta atras - o Python deixa
+    sys.stdout e sys.stderr em None, e o `original.write` estourava
+    AttributeError no PRIMEIRO print do bot: a cacada morria no arranque com
+    "'NoneType' object has no attribute 'write'". Console ausente nao e erro, e
+    so nao ter para onde ecoar - o log do painel continua recebendo tudo.
+    """
 
     def __init__(self, fila, original):
         self.fila = fila
         self.original = original
 
     def write(self, texto):
-        self.original.write(texto)
+        if self.original is not None:
+            self.original.write(texto)
         limpo = texto.replace("\r", "").strip()
         if limpo:
             self.fila.put(limpo)
+        return len(texto)
 
     def flush(self):
-        self.original.flush()
+        if self.original is not None:
+            self.original.flush()
+
+    # o traceback.print_exc() do laco do bot pergunta isto antes de escrever
+    def isatty(self):
+        return False
+
+    def writable(self):
+        return True
 
 
 MARK_ICON_ZOOM = 3              # o desenho da marca tem 13px; 3x fica legivel
@@ -944,14 +970,18 @@ class Painel:
         self.lbl_bot.config(text="bot rodando", foreground="#284")
 
     def _roda_bot(self):
-        antigo = sys.stdout
+        # o stderr tambem: sem console ele e None, e o que for escrito nele se
+        # perde em silencio - inclusive erro de callback do Tk
+        antigo, antigo_err = sys.stdout, sys.stderr
         sys.stdout = FilaDeSaida(self.fila_log, antigo)
+        sys.stderr = FilaDeSaida(self.fila_log, antigo_err)
         try:
             main.run_bot()
         except Exception as erro:
             self.fila_log.put(f"[erro] {type(erro).__name__}: {erro}")
+            self.fila_log.put(traceback.format_exc())
         finally:
-            sys.stdout = antigo
+            sys.stdout, sys.stderr = antigo, antigo_err
             main.restore_windows()
             self.fila_log.put("[gui] bot encerrado")
 

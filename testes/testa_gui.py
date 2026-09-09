@@ -80,12 +80,27 @@ for indice, (nome, _blocos) in enumerate(gui.ABAS):
         _raiz.update_idletasks()
 
 # ------------------------------------------------- a roda do mouse
-def roda(canvas, sobre):
-    canvas.yview_moveto(0.35)
+def roda(canvas, sobre, do_fim=False):
+    """
+    Gira a roda sobre `sobre` e devolve o yview antes e depois.
+
+    A posicao de partida importa por dois motivos que ja quebraram o teste:
+
+      - partindo de um ponto fixo (era 0.35), a aba Combate encurtou, 0.35
+        virou o FIM da rolagem e girar para baixo nao tinha mais para onde ir -
+        o teste reprovava por falta de espaco, e nao por defeito;
+      - o widget que se quer testar precisa estar VISIVEL, senao o ponteiro cai
+        noutro lugar e a exclusao nem e exercitada. A lista de monstros fica no
+        fim da aba: no topo da rolagem ela nao esta na tela.
+
+    Por isso: do fim rolando para CIMA quando o alvo esta embaixo, do topo
+    rolando para BAIXO quando e area comum. Nos dois casos ha para onde ir.
+    """
+    canvas.yview_moveto(1.0 if do_fim else 0.0)
     _raiz.update_idletasks()
     antes = canvas.yview()[0]
     painel._liga_roda(canvas)
-    painel._roda(type("E", (), {"delta": -120,
+    painel._roda(type("E", (), {"delta": 120 if do_fim else -120,
                                 "x_root": sobre.winfo_rootx() + 5,
                                 "y_root": sobre.winfo_rooty() + 5})())
     _raiz.update_idletasks()
@@ -111,7 +126,8 @@ for atributo, rotulo in (("lista_monstros", "lista de monstros"),
     _raiz.update_idletasks()
     _raiz.update()
     canvas = painel.telas[1 if atributo == "lista_monstros" else 2][0]
-    antes, depois = roda(canvas, widget)
+    # do fim para cima: e onde esses dois widgets estao, e la ha para onde subir
+    antes, depois = roda(canvas, widget, do_fim=True)
     parou = abs(depois - antes) < 1e-6
     print(f"roda sobre a {rotulo} ({widget.winfo_class()}): "
           f"{antes:.3f} -> {depois:.3f} "
