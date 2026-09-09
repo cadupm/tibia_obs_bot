@@ -108,8 +108,16 @@ quadrado, e tem teto (`LOOT_MAX_APERTADAS`). Em blocos, o teto cortaria os
 um deles. O teto existe porque 9 quadrados × 3 apertadas × 2 teclas dava 54
 ações em ~4 s, muito acima do que uma pessoa faz.
 
-Não pegou nada na caçada? `python main.py --loot` confere tecla, clique e
-geometria da tela com um corpo do lado, e diz como ler cada resultado.
+Não pegou nada na caçada? Dois diagnósticos, e eles respondem perguntas
+diferentes:
+
+- `python main.py --corpo` mostra a **corrente**: para o bot saber onde caiu o
+  corpo, a entrada na battle list e a barra de vida na tela do jogo têm de
+  aparecer na **mesma leitura**. Uma sem a outra é o que faz o bot não ir no
+  corpo, e o log da caçada não separa os dois casos — eles se consertam em
+  lugares diferentes. Ele conta as leituras e diz qual é o elo fraco.
+- `python main.py --loot` confere o **gesto**: tecla, clique e geometria da
+  tela, com um corpo do lado, e diz como ler cada resultado.
 
 **Limitação conhecida:** com vários bichos na tela, o corpo marcado é o do mais
 perto na leitura em que a lista ainda o tinha — e com dois igualmente colados,

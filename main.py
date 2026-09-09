@@ -3400,6 +3400,72 @@ def show_loot():
     print("  o cursor nem entrou na tela do jogo: GAME_VIEW/TILE_PX errados.")
 
 
+def show_corpo():
+    """
+    Mostra a CORRENTE do loot ao vivo, sem apertar nada.
+
+    Para o bot saber onde caiu o corpo, duas coisas tem de acontecer na MESMA
+    leitura: a entrada do bicho na battle list e a barra de vida dele na tela do
+    jogo. Uma sem a outra e o que faz o bot "nao ir no corpo", e o log de
+    caçada nao separa os dois casos - eles se consertam em lugares diferentes:
+
+      entradas > 0 e 0 criaturas -> a deteccao na tela nao esta achando o bicho.
+          E GAME_VIEW/TILE_PX errados para o seu layout, ou a barra de vida das
+          criaturas desligada nas opcoes do cliente. Sem isso o bot nunca sabe
+          onde o corpo caiu.
+      entradas = 0 e criaturas > 0 -> a battle list nao esta sendo lida. Sem ela
+          o bot nao sabe que o bicho MORREU, e nao vai buscar nada.
+      os dois > 0 -> a corrente esta fechada; se ainda nao vai no corpo, o
+          problema e chegar la (escala do minimapa, prazo, parede no caminho) e
+          isso aparece no log com [loot].
+    """
+    leitura, _teclado = setup_windows()
+    if not leitura:
+        return
+    vx, vy, vw, vh = GAME_VIEW
+    print(f"battle list x criaturas na tela, leitura por leitura.")
+    print(f"viewport {vw}x{vh} em ({vx},{vy}), quadrado de {TILE_PX}px")
+    print("Deixe um bicho na tela. Ctrl+Alt+S para sair." + chr(10))
+    juntos = so_lista = so_tela = nada = 0
+    while not keyboard.is_pressed(KILL_KEY):
+        entradas, alvo, _hp, _sp, _as = battle_state(leitura)
+        criaturas = detect_creatures(leitura)
+        if entradas and criaturas:
+            juntos += 1
+            veredito = "corrente FECHADA"
+        elif entradas:
+            so_lista += 1
+            veredito = "SO a battle list: nao sei onde o corpo cai"
+        elif criaturas:
+            so_tela += 1
+            veredito = "SO a tela: nao sei que ele morreu"
+        else:
+            nada += 1
+            veredito = "cave vazia"
+        perto = (min(criaturas, key=lambda c: max(abs(c[0]), abs(c[1])))
+                 if criaturas else None)
+        print(f"  lista={entradas} alvo={'sim' if alvo else 'nao '} | "
+              f"tela={len(criaturas)} mais perto={str(perto):>9} | "
+              f"{veredito}          ", end=chr(13), flush=True)
+        time.sleep(0.3)
+    print(chr(10) + chr(10) + f"leituras: {juntos} com os dois, {so_lista} so "
+          f"com a lista, {so_tela} so com a tela, {nada} vazias")
+    if so_lista > juntos:
+        print("A DETECCAO NA TELA e o elo fraco: o bicho esta na battle list e "
+              "o bot nao acha a barra de vida dele na tela do jogo.")
+        print("  - confira se a barra de vida das criaturas esta LIGADA nas "
+              "opcoes do cliente;")
+        print("  - rode --kite, que salva um PNG com a grade desenhada: o "
+              "quadrado ciano tem de cair no personagem.")
+    elif so_tela > juntos:
+        print("A BATTLE LIST e o elo fraco: o bot ve o bicho na tela e nao ve "
+              "a entrada dele na lista. Rode --battle.")
+    elif juntos:
+        print("A corrente esta fechada. Se ainda nao vai no corpo, o problema e "
+              "CHEGAR la: veja as linhas [loot] no log da cacada.")
+    restore_windows()
+
+
 def show_teclas():
     """
     Mede QUAIS teclas de movimento realmente andam no seu cliente.
@@ -3675,18 +3741,32 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
                      if len(corpos) > 1 else " e sigo a rota"))
             corpos.pop(0)
             return bool(corpos)
+        # DIZER POR QUE NAO ANDOU. Estes dois "return True" ficavam calados, e
+        # entre "bicho morreu" e "desisto" o log nao tinha nada - dava para ler
+        # como "ele ignorou o corpo" quando na verdade ele estava esperando.
         if odo is not None and odo.parado < WALK_STOP_TICKS:
+            if not corpo.get("avisou_parar"):
+                corpo["avisou_parar"] = True
+                print(f"[loot] corpo a {distancia:.0f} SQM; espero o "
+                      f"personagem parar de andar para clicar (um clique por "
+                      f"parada)")
             return True
         if not loot_cd.ready():
             return True
         passo = (int(round(onde[0] * MINIMAP_PX_SQM)),
                  int(round(onde[1] * MINIMAP_PX_SQM)))
         if abs(passo[0]) + abs(passo[1]) == 0:
+            # o corpo esta longe em SQM mas o passo arredonda para zero: e
+            # escala de minimapa errada, e nao ha clique que chegue la
+            print(f"[loot] corpo a {distancia:.1f} SQM daria um passo de 0 px "
+                  f"no minimapa (MINIMAP_PX_SQM={MINIMAP_PX_SQM}); largo ele. "
+                  f"Meca a escala com --zoom.")
             corpos.pop(0)
             return bool(corpos)
         click_minimap(leitura, passo)
         loot_cd.mark()
-        print(f"[loot] corpo a {distancia:.0f} SQM: ando ate ele")
+        print(f"[loot] corpo a {distancia:.0f} SQM: ando ate ele "
+              f"(clique de {passo} px no minimapa)")
         return True
 
     if not loot_cd.ready():
@@ -3695,6 +3775,9 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
         focus_window(teclado)
 
     quadrado = (int(round(onde[0])), int(round(onde[1])))
+    if corpo.get("avisou_parar") and not corpo.get("clicou"):
+        print(f"[loot] cheguei: corpo a {distancia:.0f} SQM, dentro do alcance "
+              f"de {LOOT_DIST}")
 
     # 1) CLICAR NO BICHO, uma vez por corpo. Nao se varre o anel com clique:
     # clique direito em chao vazio abre menu de contexto, e nove menus abertos
@@ -4331,6 +4414,16 @@ def run_bot():
                     # bicho vivo na tela, antes de ele sumir
                     visto_em, onde = historico[0]
                     marca_o_corpo(caminho, onde, odo_agora, visto_em=visto_em)
+                else:
+                    # ERA SILENCIO, e e uma das duas metades de "nao vai no
+                    # corpo": o bicho morreu e o bot nunca o VIU na tela, entao
+                    # nao tem onde procurar. Sem esta linha, o log fica igual ao
+                    # do caso em que ele viu e nao conseguiu chegar - e os dois
+                    # se consertam em lugares diferentes.
+                    print("[loot] o bicho morreu mas eu nunca vi a barra de "
+                          "vida dele na tela do jogo, entao nao sei onde caiu. "
+                          "Confira GAME_VIEW/TILE_PX com --kite: se ali der "
+                          "0 criaturas com bicho na tela, e a deteccao.")
                 caminho["bichos_vistos"] = []
 
             # a lista mudou? volta a valer a pena tentar atacar
@@ -4514,6 +4607,9 @@ if __name__ == "__main__":
                         help="Diagnostico do kite: criaturas na tela em SQM.")
     parser.add_argument("--teclas", action="store_true",
                         help="Mede quais teclas de movimento andam no cliente.")
+    parser.add_argument("--corpo", action="store_true",
+                        help="Mostra a corrente do loot: battle list x "
+                             "criaturas na tela, na mesma leitura.")
     parser.add_argument("--loot", action="store_true",
                         help="Confere o saque: varre os quadrados em volta com "
                              "as duas teclas e depois clica neles.")
@@ -4546,6 +4642,8 @@ if __name__ == "__main__":
             show_teclas()
         elif args.loot:
             show_loot()
+        elif args.corpo:
+            show_corpo()
         elif args.evitar:
             record_evitar()
         elif args.record:
