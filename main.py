@@ -25,6 +25,7 @@ tudo e devolvido ao estado anterior.
 import argparse
 import traceback
 import ctypes
+import datetime
 import json
 import os
 import random
@@ -5313,12 +5314,36 @@ class Espelho:
                 pass
 
 
+LOG_MAX_BYTES = 4 * 1024 * 1024
+
+
 def abre_o_log():
-    """Abre bot.log para esta sessao. Devolve (arquivo, stdout, stderr)."""
+    """
+    Abre bot.log para esta sessao, ACRESCENTANDO. Devolve (arquivo, antes).
+
+    Em modo de escrita ele apagava o log da cacada anterior - e a suite de
+    testes chama run_bot() dezenas de vezes, entao rodar os testes destruia
+    justamente o log que eu ia ler para achar o defeito relatado. Aconteceu.
+
+    Acrescentar nao pode crescer sem fim: passado LOG_MAX_BYTES o arquivo
+    recomeca. Quatro megabytes sao muitas horas de cacada.
+    """
     caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            "bot.log")
+    modo = "a"
     try:
-        arquivo = open(caminho, "w", encoding="utf-8", errors="replace")
+        if os.path.getsize(caminho) > LOG_MAX_BYTES:
+            modo = "w"
+    except OSError:
+        pass
+    try:
+        arquivo = open(caminho, modo, encoding="utf-8", errors="replace")
+        # datetime e nao time: os testes trocam main.time por um relogio de
+        # mentira que so tem time() e sleep(), e o cabecalho do log nao pode
+        # derrubar o laco por causa disso
+        agora = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        arquivo.write(chr(10) + "=" * 70 + chr(10) + f"sessao de {agora}"
+                      + chr(10) + "=" * 70 + chr(10))
     except OSError as erro:
         print(f"[log] nao consegui abrir {caminho}: {erro}")
         return None, sys.stdout, sys.stderr
@@ -5480,11 +5505,17 @@ def run_bot():
             tapando = caminho.get("tapando") or []
             if tapando:
                 qual = ", ".join(f"'{t}' ({f:.0%})" for t, f in tapando[:3])
-                if caminho.get("avisou_tapado") != qual:
+                # O AVISO SE REPETE de vez em quando. Dito uma vez so, uma
+                # pausa longa fica indistinguivel de um bot morto: o log
+                # simplesmente para, e quem esta olhando conclui que travou.
+                if (caminho.get("avisou_tapado") != qual
+                        or volta - caminho.get("avisou_em", 0) >= 60):
                     caminho["avisou_tapado"] = qual
+                    caminho["avisou_em"] = volta
                     print(f"[warn] {qual} esta por cima da area de captura: o "
                           f"bot leria os pixels dela como se fossem o jogo. "
-                          f"Parado ate destapar.")
+                          f"PARADO ate destapar - tire a janela da frente ou "
+                          f"minimize-a.")
                 time.sleep(0.5)
                 continue
             if caminho.get("avisou_tapado"):
@@ -6139,10 +6170,25 @@ def run_bot():
                 # leituras seguidas - a mesma carencia do loot, contada logo
                 # acima. Perder meio segundo aqui e barato; trocar o modo de
                 # luta do personagem, nao.
-                # A ROTA e mais exigente que o saque: ela continua esperando
-                # a lista LIMPA. Saquear o corpo do lado nao puxa monstro, mas
-                # sair andando o cave com bicho ainda na lista puxa.
-                if not lutando and limpo >= WALK_RESUME_READS:
+                #
+                # E A ROTA E MAIS EXIGENTE que o saque: ela espera a lista
+                # LIMPA, porque saquear o corpo do lado nao puxa monstro mas
+                # sair andando o cave com bicho na lista puxa.
+                #
+                # MAIS EXIGENTE, NAO ETERNA. Um bicho que fica na battle list
+                # sem aparecer na tela - fugiu, ficou preso atras de parede,
+                # esta noutro andar - nunca sai da lista, e com a regra so de
+                # "lista limpa" o bot para de andar PARA SEMPRE. Foi o que
+                # aconteceu em cacada: "1 na battle list, mas nenhum bicho na
+                # tela e nenhum engajado" e a rota nunca mais voltou. Entao,
+                # passada uma carencia mais longa sem nada perto, a rota anda
+                # mesmo com entrada na lista - e o log diz por que.
+                paciencia = WALK_RESUME_READS * (1 if entradas == 0 else 4)
+                if lutando and not perto_de_bicho and limpo == paciencia:
+                    print(f"[walk] {entradas} na battle list, mas nada na tela "
+                          f"ha {limpo} leituras: volto a andar a rota. Bicho "
+                          f"que nao aparece nao trava o trajeto")
+                if not perto_de_bicho and limpo >= paciencia:
                     if parou_por_bicho:
                         print(f"[walk] battle list limpa por {limpo} leituras, "
                               f"retomando o trajeto")
