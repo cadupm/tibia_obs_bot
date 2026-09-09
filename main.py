@@ -5329,6 +5329,34 @@ def abre_o_log():
     return arquivo, antes[0], antes[1]
 
 
+def zera_estado():
+    """
+    Apaga o que foi APRENDIDO na sessao anterior. Chamado a cada arranque.
+
+    O bot roda dentro do mesmo processo da GUI: parar e comecar de novo nao
+    recria o modulo, entao tudo o que ele aprendeu continua la. Relatado pelo
+    usuario: "a battle list ficava travando o inicio do bot quando para e
+    recomecava".
+
+    O que envenena de verdade e a COLUNA da battle list (_BATTLE_ANCHOR):
+    aprendida uma vez com a tela errada - o painel por cima, uma janela
+    tapando, o cliente redesenhando -, ela fica errada para sempre e nenhuma
+    leitura seguinte a corrige, porque so se aprende quando ainda nao ha
+    ancora. O mesmo vale para a maior barra ja vista, que serve de 100% do
+    alvo, e para a regiao das barras de vida e mana.
+
+    O estado da CACADA (fila de corpos, rota, trava de alvo) ja nasce de novo a
+    cada run_bot; o que sobrevivia era so o aprendido.
+    """
+    global _BATTLE_TRACK
+    _BATTLE_TRACK = 0
+    _BATTLE_ANCHOR.clear()
+    _BARS_CACHE.clear()
+    _BARRAS_CRUAS.clear()
+    _CALIBRA.update({"desvio": None, "seguidas": 0, "avisou": False,
+                     "sem_coluna": 0, "avisou_coluna": False})
+
+
 def run_bot():
     """Loop principal do bot."""
     atualiza_passos()          # a configuracao manda nas teclas
@@ -5341,6 +5369,7 @@ def run_bot():
         return
 
     arquivo_log, saida_antes, erro_antes = abre_o_log()
+    zera_estado()          # o que foi aprendido na sessao passada nao vale
     print(f"Bot iniciado: lendo de '{leitura.title}', teclas em '{teclado.title}'.")
     print("Ctrl+Alt+S para parar.")
     # A GRADE PRIMEIRO. Errada, ela nao da erro nenhum: so poe cada quadrado
