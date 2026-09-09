@@ -137,6 +137,34 @@ A contagem resolve sem chute: a leitura em que ele ainda constava é a última c
 morrendo ali: com a regra antiga o bot marcava (4,0), o lugar do engajamento; com
 a nova, (1,0).
 
+**A troca de alvo é uma morte, e ela apagava a suspeita.** Numa caverna se mata
+em grupo, e a cada morte o cliente passa a moldura vermelha para o próximo bicho
+sem que a battle list fique vazia. A trava de alvo acusava a queda na contagem de
+entradas e, na **mesma leitura**, substituía o sprite rastreado pelo do novo
+alvo — a suspeita pendente era destruída antes de poder fechar. Só a **última**
+morte da briga era confirmada, porque é a que esvazia a lista. Medido em
+isolamento, com quatro bichos e a moldura passando adiante: **zero de quatro**
+mortes detectadas.
+
+Os dois sinais chegam juntos e bastam sozinhos: a moldura passou para outro bicho
+**e** o que se atacava não está mais na lista. Não há o que esperar — a morte é
+declarada ali, antes de o sprite rastreado ser substituído.
+
+E mais dois estragos na **história de leituras** (`bichos_vistos`), que é a
+referência da comparação de imagem:
+
+- **rejeitar um bicho pelo filtro apagava a história.** Ela é compartilhada por
+  todos os bichos, não é de um: apagar deixava as mortes seguintes sem
+  referência. Agora o filtro descarta apenas o ponto de morte **daquele** bicho;
+- **`if historico:` governava o bloco inteiro**, inclusive o registro de barras
+  que sumiram — que não depende dela para nada. História vazia, nenhum corpo
+  marcado, mesmo com o quadrado exato da morte já anotado. O registro do instante
+  passa a valer sozinho, e a comparação de imagem continua sendo a reserva.
+
+Era esse conjunto que produzia "com três para saquear e um sem, ele vai só no
+último". Depois: três corpos marcados, em três quadrados distintos, e o
+desmarcado filtrado.
+
 O que substituiu a varredura: **o corpo é identificado na tela.** O quadrado onde o
 bicho estava **muda** quando ele morre (sprite de bicho → sprite de corpo), e o
 quadrado vizinho que nunca teve bicho continua igual. Quem mudou é onde caiu.
@@ -694,6 +722,16 @@ O código está comentado com o *porquê* de cada uma delas.
   fazer algo que fazia. Esse relatório, na primeira vez que rodou, achou outros
   dois estragos na mesma config.
 
+- **Refatorar apaga invariante em silêncio.** A detecção "a moldura passou para
+  outro bicho **e** o que eu atacava saiu da lista, então ele morreu" foi
+  escrita, funcionou, e desapareceu numa reestruturação posterior do mesmo
+  método — sem que nenhum teste caísse, porque os testes que existiam usavam o
+  caso em que a battle list **esvazia**, e nesse caso a morte fecha pelo outro
+  caminho. Só uma caçada com três bichos marcados e um sem mostrou o estrago:
+  ia-se só no último. O teste que faltava não era do conserto, era do
+  invariante: quatro bichos, a moldura passando adiante, e a exigência de que
+  cada morte seja detectada quando a lista **não** esvazia.
+
 - **Campo de texto vazio virava a palavra "None".** A GUI gravava vazio como
   `None`, o json escreve `null`, e o carregador fazia `str(None)` — então
   `LOOT_MOD` valia `"None"` e o clique segurava uma tecla com esse nome. Vazio
@@ -826,6 +864,7 @@ python testes/testa_calibra_barra.py  # a barra do personagem calibra a convers�
 python testes/testa_barra_sumiu.py    # o corpo está onde uma barra de vida desapareceu
 python testes/testa_corpo_onde_morreu.py  # o corpo sai onde ele morreu, não onde foi engajado
 python testes/testa_loot_precisao.py  # a aproximação cai no pixel do quadrado, sem escala
+python testes/testa_loot_quatro.py    # 4 bichos, 3 marcados: os 3 corpos são pegos
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI
