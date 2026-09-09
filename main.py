@@ -197,12 +197,21 @@ BATTLE_LIST_FIRST_ENTRY = (-120, 412)
 # ao norte deslocaram o minimapa 6px, ou seja 2 px por SQM.
 ENABLE_WALK = False
 MINIMAP = (1752, 3, 108, 110)   # offsets de cliente: x, y, largura, altura
-MINIMAP_PX_SQM = 2              # pixels de minimapa por quadrado NO ZOOM EM USO.
-                                # Medido: 2.0 no zoom padrao e 0.5 com zoom out
-                                # (1 px = 2 SQM). Rode "python main.py --zoom"
-                                # para medir no seu zoom - so afeta os numeros
-                                # em SQM dos logs, nao as decisoes, que sao
-                                # todas em pixel.
+MINIMAP_PX_SQM = 1              # pixels de minimapa por quadrado NO ZOOM EM USO.
+                                # MEDIDO no cliente do usuario dando passos e
+                                # olhando o minimapa: 4 passos para a direita
+                                # deslocaram o minimapa 4 px. Estava 2, e isso
+                                # NAO e cosmetico: o corpo e guardado em pixel
+                                # de minimapa e reconvertido para quadrado por
+                                # este numero, entao com ele dobrado o bot
+                                # contava METADE de tudo o que o personagem
+                                # andava - com tres corpos e o boneco andando
+                                # entre eles, cada trecho somava erro. Ja foi
+                                # so cosmetico, quando a rota era toda em
+                                # pixel; deixou de ser quando o saque passou a
+                                # converter mundo em quadrado.
+                                # Rode "python main.py --grade" para medir no
+                                # seu zoom.
 # Rotas ficam em arquivos nomeados dentro de rotas/, para dar conta de mais de
 # um cave. Caminho absoluto de proposito: a GUI pode ser aberta de outra pasta.
 ROUTES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rotas")
@@ -5221,6 +5230,101 @@ def calibrate():
     print("\nCalibracao encerrada.")
 
 
+def diagnostico_grade():
+    """
+    Mede as tres reguas da tela dando passos, e diz os valores a usar.
+
+    Nenhuma delas da erro quando esta errada: elas so poem cada quadrado um
+    pouco fora do lugar, com o desvio crescendo conforme a distancia ao
+    personagem. Todas as tres ja estiveram erradas ao mesmo tempo neste
+    projeto, e o sintoma era "o bot as vezes acerta o clique no corpo e as
+    vezes erra por um quadrado".
+
+    O metodo nao depende de tema, resolucao nem zoom: o personagem esta SEMPRE
+    no quadrado do meio, entao um passo dele rola a cena em exatamente um
+    quadrado e o minimapa em exatamente um SQM.
+    """
+    leitura, teclado = setup_windows()
+    if not leitura:
+        return
+    print(chr(10) + "Nao mexa no personagem: eu dou os passos.")
+    try:
+        focus_window(teclado)
+        time.sleep(0.4)
+
+        # ---------------------------------------- 1) tamanho do quadrado
+        #
+        # UM PASSO PODE ESBARRAR - parede, buraco, bicho no caminho -, e um
+        # passo que nao anda mede zero. Entao se tenta cada direcao ate uma
+        # delas mover o personagem, e volta pelo caminho andado.
+        cx, cy, _, _ = client_rect(leitura)
+        faixa = (cx + GAME_VIEW[0] + 20, cy + GAME_VIEW[1] + 100,
+                 GAME_VIEW[2] - 40, 120)
+        opostas = {"right": "left", "left": "right",
+                   "down": "up", "up": "down"}
+        tile, escala = 0, 0
+        for tecla in ("right", "left", "down", "up"):
+            antes = grab(faixa).astype(np.int16)
+            mapa_antes = minimap_grab(leitura)
+            pyautogui.press(tecla)
+            time.sleep(0.9)
+            depois = grab(faixa).astype(np.int16)
+            mapa_depois = minimap_grab(leitura)
+            larg = antes.shape[1]
+            melhor, nota = 0, None
+            for d in range(-120, 121):
+                if d >= 0:
+                    erro = np.abs(antes[:, d:] - depois[:, :larg - d]).mean()
+                else:
+                    erro = np.abs(antes[:, :larg + d] - depois[:, -d:]).mean()
+                if nota is None or erro < nota:
+                    melhor, nota = d, erro
+            passo, _ = minimap_shift(mapa_antes, mapa_depois)
+            andou = max(abs(passo[0]), abs(passo[1]))
+            if andou:
+                pyautogui.press(opostas[tecla])
+                time.sleep(0.8)
+            if abs(melhor) and andou:
+                tile, escala = abs(melhor), andou
+                print(f"  medido com o passo '{tecla}'")
+                break
+            print(f"  passo '{tecla}' nao andou (esbarrou?); tento outro")
+
+        if not tile:
+            print("  nenhum passo andou: o personagem esta preso? Ande um "
+                  "quadrado a mao e rode de novo.")
+        else:
+            print(f"  tamanho do quadrado: {tile} px      "
+                  f"(TILE_PX = {TILE_PX})")
+            print(f"  escala do minimapa:  {escala} px por SQM   "
+                  f"(MINIMAP_PX_SQM = {MINIMAP_PX_SQM})")
+
+        # ---------------------- 3) origem, pela moldura vermelha do alvo
+        img = viewport(leitura)
+        onde = acha_moldura_do_alvo(img)
+        if onde is None:
+            print("  origem da area de jogo: ATAQUE UM BICHO e rode de novo - "
+                  "a moldura vermelha do alvo e o unico desenho alinhado a "
+                  "grade, e e ela que diz onde as bordas caem.")
+        else:
+            vx, vy, vw, vh = GAME_VIEW
+            meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+            # onde a moldura CAI hoje x onde ela DEVERIA cair
+            print(f"  moldura do alvo no quadrado {onde}: a grade esta "
+                  f"alinhada se a moldura preencher o quadrado inteiro no "
+                  f"--kite")
+    finally:
+        restore_windows()
+
+    print(chr(10) + "COMO LER")
+    print("  Os tres numeros tem de bater com os configurados. Diferente:")
+    print(f"    TILE_PX        -> ponha o tamanho do quadrado medido")
+    print(f"    MINIMAP_PX_SQM -> ponha a escala medida")
+    print("  A ORIGEM (GAME_VIEW) sai da moldura do alvo: o canto dela e o "
+          "canto de um quadrado, entao a origem e o canto dela menos um "
+          "multiplo do tamanho do quadrado.")
+
+
 def run_bot():
     """Loop principal do bot."""
     atualiza_passos()          # a configuracao manda nas teclas
@@ -6026,6 +6130,9 @@ if __name__ == "__main__":
                         help="Grava waypoints enquanto voce anda a rota.")
     parser.add_argument("--marcas", action="store_true",
                         help="Grava a ORDEM das marcas do mapa (pise em cada uma).")
+    parser.add_argument("--grade", action="store_true",
+                        help="Mede as reguas da tela: tamanho do quadrado, "
+                             "origem da area de jogo e escala do minimapa.")
     parser.add_argument("--zoom", action="store_true",
                         help="Mede a escala do minimapa (px por SQM) no zoom atual.")
     parser.add_argument("--battle", action="store_true",
@@ -6077,6 +6184,8 @@ if __name__ == "__main__":
             record_waypoints()
         elif args.marcas:
             record_marks()
+        elif args.grade:
+            diagnostico_grade()
         elif args.zoom:
             medir_escala()
         elif args.calib:

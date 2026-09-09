@@ -268,7 +268,11 @@ if cliques_de_andar():
 # ------------------------ 6) o corpo NAO envelhece: posicao absoluta
 estado = zera()
 main.marca_o_corpo(estado, (4, 0), odo, na_tela=True)
-odo.pos = [4, 0]                       # andou 2 SQM na direcao do corpo
+# ANDOU 2 SQM na direcao do corpo. Em PIXEL DE MINIMAPA, que e a unidade do
+# odometro - escrever 4 aqui embutia a escala de entao (2 px por SQM) e o teste
+# virava refem dela: medida a escala de verdade no cliente (1 px por SQM), o
+# mesmo 4 passou a significar 4 SQM e a conta "certa" deu errada.
+odo.pos = [2 * main.MINIMAP_PX_SQM, 0]
 agora = main.onde_esta_o_corpo(estado["corpos"][0], odo)
 print(f"\ncorpo visto a 4 SQM; depois de andar 2 SQM esta a "
       f"{agora[0]:.0f},{agora[1]:.0f}")
@@ -277,7 +281,7 @@ if abs(agora[0] - 2) > 0.01:
 
 # ------------ 7) desconta o caminho andado entre ver o bicho e a morte
 estado = zera()
-odo.pos = [6, 0]                       # andou 3 SQM desde que viu o bicho
+odo.pos = [3 * main.MINIMAP_PX_SQM, 0]   # andou 3 SQM desde que viu o bicho
 main.marca_o_corpo(estado, (4, 0), odo, visto_em=(0, 0))
 agora = main.onde_esta_o_corpo(estado["corpos"][0], odo)
 print(f"viu o bicho a 4 SQM e andou 3 na direcao dele -> corpo a "
