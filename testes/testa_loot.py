@@ -132,7 +132,7 @@ def teclas_de_saque():
 
 
 falhas = []
-print(f"gesto: {main.LOOT_CLIQUES} clique(s) com o botao {main.LOOT_BOTAO}"
+print(f"gesto: 1 clique com o botao {main.LOOT_BOTAO}"
       + (f" + {main.LOOT_MOD}" if main.LOOT_MOD else "")
       + f", a {main.LOOT_DIST} SQM do corpo")
 print(f"tecla de saque: {main.LOOT_TECLA!r}"
@@ -181,8 +181,9 @@ print(f"\num corpo: {len(cliques())} clique(s) em {len(pontos)} ponto(s) "
 if len(pontos) != 1:
     falhas.append(f"clicou em {len(pontos)} pontos diferentes: o pedido e "
                   f"clique NO CORPO, nao em volta dele")
-if len(cliques()) != main.LOOT_CLIQUES:
-    falhas.append(f"{len(cliques())} clique(s), esperava {main.LOOT_CLIQUES}")
+if len(cliques()) != 1:
+    falhas.append(f"{len(cliques())} clique(s), esperava 1 - o segundo "
+                  f"clique cai na bolsa que o primeiro abriu")
 esperadas = ([main.LOOT_TECLA]
              + ([main.NUMPAD_DO_SINAL[main.LOOT_TECLA]]
                 if main.LOOT_TECLA_NUMPAD
@@ -226,7 +227,7 @@ print(f"  saqueou todos? {acabou} | {len(cliques())} clique(s) em corpo, "
       f"sobrou {len(estado.get('corpos') or [])} na fila")
 if not acabou or estado.get("corpos"):
     falhas.append("nao esvaziou a fila de corpos")
-if len(cliques()) != 3 * main.LOOT_CLIQUES:
+if len(cliques()) != 3:
     falhas.append(f"{len(cliques())} clique(s) para 3 corpos: cada corpo tem "
                   f"de receber o seu, e so o seu")
 

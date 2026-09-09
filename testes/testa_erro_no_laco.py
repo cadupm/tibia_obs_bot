@@ -57,6 +57,7 @@ def prepara():
     main.load_evitar = lambda caminho=None: {}
     main.detect_marks = lambda win, mm=None, cor=None: []
     main.detect_creatures = lambda win, img=None: []
+    main.client_rect = lambda win: (0, 0, 1920, 1009)
     main.grab = lambda regiao: np.zeros((110, 108, 3), dtype=np.uint8)
     main.ENABLE_WALK = False
     main.ENABLE_HEAL = main.ENABLE_MANA = False

@@ -260,8 +260,6 @@ LOOT_CLICA = True
 LOOT_BOTAO = "direito"          # direito | esquerdo
 LOOT_MOD = ""                   # shift | ctrl | alt | vazio: alguns clientes
                                 # poem o saque rapido em shift+direito
-LOOT_CLIQUES = 1                # cliques no quadrado do corpo. Um basta:
-                                # clicou nele, esta saqueado.
 LOOT_FECHA_MENU = True          # esc depois de clicar: se um menu de contexto
                                 # abriu, ele fica na frente e engole o resto
 
@@ -3622,7 +3620,7 @@ def show_loot():
     leitura, teclado = setup_windows()
     if not leitura:
         return
-    print(f"Clicando {LOOT_CLIQUES}x com o botao {LOOT_BOTAO}"
+    print(f"Clicando com o botao {LOOT_BOTAO}"
           + (f", segurando {LOOT_MOD}" if LOOT_MOD else "")
           + " nos quadrados em volta do personagem.")
     print("Fique COLADO no corpo. Ctrl+C para sair." + chr(10))
@@ -3975,6 +3973,101 @@ def barras_que_sumiram(havia, agora, andou):
     return fila
 
 
+def na_borda_da_tela(offset):
+    """
+    O quadrado esta no anel de fora da area do jogo?
+
+    Bicho que anda para fora da tela tem a barra vista por ultimo na borda, e
+    sai da battle list junto - dois sinais iguais aos da morte. A diferenca e o
+    LUGAR: quem morreu na briga morreu perto, e quem sumiu na borda foi embora.
+    """
+    _vx, _vy, vw, vh = GAME_VIEW
+    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+    return abs(offset[0]) >= meio_col or abs(offset[1]) >= meio_lin
+
+
+def mortes_na_leitura(antes, agora, saiu_da_lista, odo):
+    """
+    Das barras que sumiram nesta leitura, quais sao MORTE.
+
+    Barra deixa de estar num quadrado por tres motivos, e so um deles e morte:
+
+      - o bicho MORREU ali (o que se quer);
+      - o bicho ANDOU um quadrado: o lugar velho fica vazio e o novo passa a
+        ter barra;
+      - o bicho saiu da TELA, e a ultima barra dele ficou na borda.
+
+    Tratar os tres como morte foi o estrago medido: numa briga os bichos se
+    mexem a cada leitura, o registro enchia de quadrado que nao era corpo, e a
+    morte consumia "o mais recente" - que sai de uma iteracao de CONJUNTO, isto
+    e, de ordem arbitraria. Em 5 arranjos de briga, 4 acertavam por sorte de
+    hash e 1 apontava o quadrado de onde um bicho apenas tinha dado um passo.
+
+    Como se separa, sem limiar:
+
+      1. `saiu_da_lista` e quantas entradas deixaram a battle list. ZERO
+         significa que ninguem morreu nem foi embora: barra que sumiu com a
+         lista intacta e bicho que andou, ou uma leitura em que a deteccao
+         piscou. Nada a registrar.
+      2. PASSO E EXPLICADO POR UMA BARRA NOVA A 1 SQM. Bicho anda um quadrado
+         por vez, entao um desaparecimento com barra nova ao lado tem
+         explicacao que nao e morte.
+      3. Se ha MENOS barras novas do que desaparecimentos explicaveis, os
+         passos nao dao conta de todos e uma dessas barras e morte - mas nao se
+         sabe qual. Ai nao se chuta: devolve nada, e a identificacao por imagem
+         (que e a reserva) decide. O bot largar o corpo custa um loot; o bot
+         chutar custa cliques em quadrado errado e uma caminhada para o lugar
+         nenhum.
+      4. Desaparecimento na BORDA da tela e bicho que foi embora.
+
+    `antes` e `agora` sao conjuntos de posicoes em coordenada de MUNDO, e `odo`
+    serve para voltar de mundo para quadrado da tela.
+
+    Devolve (posicoes de mundo que sao morte, se a leitura foi ambigua).
+    """
+    if odo is None or not saiu_da_lista:
+        return [], False
+    sumiu, surgiu = antes - agora, agora - antes
+    perto = MINIMAP_PX_SQM + 0.5           # um passo, contando diagonal
+    explicados, mortos = [], []
+    for lugar in sorted(sumiu):
+        passo = any(abs(n[0] - lugar[0]) <= perto
+                    and abs(n[1] - lugar[1]) <= perto for n in surgiu)
+        (explicados if passo else mortos).append(lugar)
+    # AMBIGUO NAO E "POUCAS BARRAS NOVAS": e nao haver como distribuir os
+    # passos. Numa briga de melee todo mundo esta a 1 SQM de todo mundo, entao
+    # o quadrado de quem morreu quase sempre fica ao lado da barra nova de quem
+    # andou - e a mesma barra nova explica dois desaparecimentos diferentes.
+    # Quando isso acontece, nenhuma conta de posicao resolve: as duas leituras
+    # do mundo sao compativeis com "A morreu e B andou" e com "B morreu e A
+    # andou".
+    # MAIS CANDIDATOS DO QUE ENTRADAS QUE SAIRAM DA LISTA tambem e duvida:
+    # alguma daquelas barras sumiu por outro motivo (o bicho saiu da tela e a
+    # entrada dele FICOU na lista, que e o caso do fugitivo), e nao se sabe
+    # qual. Medido: com duas barras sumindo e uma so entrada saindo, o registro
+    # guardava as duas e a morte consumia a errada - corpo marcado a 2 SQM, e
+    # o bot andando atras dele.
+    if len(mortos) > saiu_da_lista:
+        print(f"[loot] {len(mortos)} barra(s) sumiram sem explicacao e so "
+              f"{saiu_da_lista} entrada(s) sairam da battle list: uma delas "
+              f"saiu da TELA sem morrer, e nao sei qual; nao chuto o quadrado")
+        return [], True
+    if surgiu and len(explicados) > len(surgiu):
+        print(f"[loot] {len(sumiu)} barra(s) sumiram e {len(surgiu)} "
+              f"apareceram na mesma leitura: nao da para dizer qual foi passo "
+              f"e qual foi morte, entao nao chuto o quadrado")
+        return [], True
+    fora = [l for l in mortos
+            if na_borda_da_tela((round((l[0] - odo.pos[0]) / MINIMAP_PX_SQM),
+                                 round((l[1] - odo.pos[1]) / MINIMAP_PX_SQM)))]
+    for lugar in fora:
+        quadrado = (round((lugar[0] - odo.pos[0]) / MINIMAP_PX_SQM),
+                    round((lugar[1] - odo.pos[1]) / MINIMAP_PX_SQM))
+        print(f"[loot] barra sumiu em {quadrado}, na borda da tela: bicho que "
+              f"andou para fora, nao morte")
+    return [l for l in mortos if l not in fora], False
+
+
 def acha_o_corpo(tela_antes, tela_agora, palpite, andou, onde_havia=()):
     """
     Qual quadrado do anel mudou desde que o bicho estava vivo.
@@ -4151,24 +4244,23 @@ def clica_no_corpo(leitura, quadrado, teclado=None, distancia=None,
     x, y = ponto_do_quadrado(leitura, quadrado)
     cliques = 0
     if LOOT_CLICA:
-        for _ in range(max(LOOT_CLIQUES, 1)):
-            click_game(x, y, botao=LOOT_BOTAO, mod=LOOT_MOD)
-            time.sleep(LOOT_CLIQUE_PAUSA)
-        cliques = max(LOOT_CLIQUES, 1)
-        if LOOT_FECHA_MENU and STOP_WALK_KEY and not lutando:
-            # menu de contexto aberto fica na frente e engole clique e tecla.
-            #
-            # SO FORA DA BRIGA: no cliente esta tecla para TODAS as acoes, o
-            # que inclui soltar o alvo. Apertada com bicho engajado, o saque na
-            # hora custaria o alvo, e o proximo ataque teria de reengajar.
-            if teclado is not None and not teclado.isActive:
-                focus_window(teclado)
-            pyautogui.press(STOP_WALK_KEY)
-    # A TECLA, no MESMO ponto e SO COLADO: o cursor ja esta sobre o corpo por
-    # causa do clique, e o saque rapido age sobre o que esta debaixo dele - mas
-    # so alcanca corpo ao lado ou em cima. De longe ela nao pega nada, e o
-    # clique direito ja da conta dessa distancia sozinho. Ela e o reforco para
-    # o caso de o clique nao ter saqueado, nao um segundo gesto.
+        # UM CLIQUE, E SO UM. O primeiro clique direito no corpo abre a bolsa,
+        # e ela aparece SOBRE a area do jogo: um segundo clique no mesmo pixel
+        # cai na janela que o primeiro abriu, e ali ele e clique direito num
+        # item - menu de contexto, que fica na frente e engole a tecla de
+        # saque. Isto ja foi a opcao LOOT_CLIQUES; ela sobrou valendo 2 numa
+        # config salva, e era exatamente o clique a mais.
+        click_game(x, y, botao=LOOT_BOTAO, mod=LOOT_MOD)
+        time.sleep(LOOT_CLIQUE_PAUSA)
+        cliques = 1
+    # A TECLA, COLADA NO CLIQUE e no MESMO ponto: o cursor ja esta sobre o
+    # corpo por causa do clique, e o saque rapido age sobre o que esta debaixo
+    # dele - mas so alcanca corpo ao lado ou em cima. De longe ela nao pega
+    # nada, e o clique direito ja da conta dessa distancia sozinho.
+    #
+    # ENTRE O CLIQUE E A TECLA NAO PODE HAVER NADA: o esc de fechar menu ficava
+    # aqui no meio, e qualquer coisa que roube o foco ou mexa o cursor entre os
+    # dois gestos custa o saque.
     colado = distancia is None or distancia <= LOOT_TECLA_DIST
     if LOOT_TECLA and colado:
         if not cliques:
@@ -4181,6 +4273,20 @@ def clica_no_corpo(leitura, quadrado, teclado=None, distancia=None,
         teclas = aperta_saque(teclado)
     else:
         teclas = []
+        if LOOT_TECLA:
+            print(f"[loot] corpo a {distancia:.0f} SQM: a tecla "
+                  f"{LOOT_TECLA!r} so alcanca a {LOOT_TECLA_DIST} SQM, "
+                  f"entao vai so o clique")
+    if cliques and LOOT_FECHA_MENU and STOP_WALK_KEY and not lutando:
+        # menu de contexto aberto fica na frente e engole o que vier depois -
+        # mas isto vem DEPOIS da tecla de saque, nunca antes dela.
+        #
+        # SO FORA DA BRIGA: no cliente esta tecla para TODAS as acoes, o que
+        # inclui soltar o alvo. Apertada com bicho engajado, o saque na hora
+        # custaria o alvo, e o proximo ataque teria de reengajar.
+        if teclado is not None and not teclado.isActive:
+            focus_window(teclado)
+        pyautogui.press(STOP_WALK_KEY)
     return cliques, teclas
 
 
@@ -4974,22 +5080,53 @@ def run_bot():
                 # Em coordenada de MUNDO: o personagem se move entre a morte e
                 # o saque, e offset guardado envelheceu duas vezes neste
                 # projeto.
-                agora_barras = detect_creatures(leitura)
+                # E BARRA QUE SUMIU NAO E SEMPRE MORTE: bicho que anda
+                # tira a barra do quadrado velho, e bicho que sai da tela
+                # tambem. mortes_na_leitura() separa os tres casos com o que
+                # esta na propria leitura - quantas entradas sairam da lista,
+                # quantas barras novas apareceram e onde - em vez de tratar
+                # tudo como corpo.
+                tela_agora = viewport(leitura)
+                agora_barras = detect_creatures(leitura, img=tela_agora)
                 mundo_agora = {
                     (round(odo_agora.pos[0] + q[0] * MINIMAP_PX_SQM),
                      round(odo_agora.pos[1] + q[1] * MINIMAP_PX_SQM))
                     for q in agora_barras} if odo_agora else set()
                 antes_barras = caminho.get("barras_mundo")
+                leitura_n = caminho["leituras"] = caminho.get("leituras", 0) + 1
                 if antes_barras is not None:
-                    for lugar in antes_barras - mundo_agora:
-                        caminho.setdefault("sumiram", []).append(
-                            (lugar, time.time()))
-                    del caminho.setdefault("sumiram", [])[:-8]
+                    # A ENTRADA SO VALE ENQUANTO E RECENTE. A morte e
+                    # confirmada ate TARGET_GONE_READS leituras depois, entao a
+                    # janela e essa mais folga; passado isso, uma anotacao
+                    # velha usada numa morte nova manda o bot para um quadrado
+                    # que nao tem nada.
+                    caminho["sumiram"] = [
+                        e for e in (caminho.get("sumiram") or [])
+                        if leitura_n - e[2] <= TARGET_GONE_READS + 4]
+                    # a lista pode encolher uma leitura antes ou depois de a
+                    # barra sumir: battle list e tela sao duas capturas
+                    saiu = max(caminho.get("entradas_antes", entradas)
+                               - entradas, 0)
+                    caminho["saiu_atrasado"] = caminho.get("saiu_atrasado", 0)
+                    saiu = max(saiu, caminho["saiu_atrasado"])
+                    achadas, ambiguo = mortes_na_leitura(
+                        antes_barras, mundo_agora, saiu, odo_agora)
+                    for lugar in achadas:
+                        caminho["sumiram"].append(
+                            (lugar, time.time(), leitura_n))
+                    if ambiguo:
+                        caminho["ambiguo_em"] = leitura_n
+                    caminho["saiu_atrasado"] = max(
+                        caminho.get("entradas_antes", entradas) - entradas, 0)
+                    del caminho["sumiram"][:-8]
                 caminho["barras_mundo"] = mundo_agora
+                caminho["entradas_antes"] = entradas
 
             if ENABLE_LOOT and entradas > 0:
-                tela = viewport(leitura)
-                na_tela = detect_creatures(leitura, img=tela)
+                # a captura e a deteccao ja sao as do bloco de cima: eram duas
+                # capturas da mesma area na mesma leitura
+                tela = tela_agora
+                na_tela = agora_barras
                 if na_tela:
                     perto = min(na_tela,
                                 key=lambda c: max(abs(c[0]), abs(c[1])))
@@ -5053,7 +5190,7 @@ def run_bot():
                     quadrados = [
                         (round((lugar[0] - odo_agora.pos[0]) / MINIMAP_PX_SQM),
                          round((lugar[1] - odo_agora.pos[1]) / MINIMAP_PX_SQM))
-                        for lugar, _t in usa]
+                        for lugar, _t, _n in usa]
                     del caminho["sumiram"][-len(usa):]
                     print(f"[loot] {mortos_agora} morte(s); a barra de vida "
                           f"sumiu em {quadrados}: e ali que os corpos estao")
@@ -5063,7 +5200,17 @@ def run_bot():
                     if LOOT_NA_HORA:
                         saque_na_hora(leitura, teclado, caminho, loot_cd,
                                       odo_agora)
-                elif historico:
+                elif (historico and caminho.get("leituras", 0)
+                      - caminho.get("ambiguo_em", -99)
+                      > TARGET_GONE_READS + 2):
+                    # A RESERVA NAO ENTRA DEPOIS DE LEITURA AMBIGUA. Ela
+                    # compara imagem de quadrado, e o quadrado de onde um bicho
+                    # saiu ANDANDO fica chao puro - que e justamente o que
+                    # "mudou mais" desde que havia bicho ali. Medido: com tres
+                    # barras se mexendo na leitura da morte, ela marcou o
+                    # quadrado de um bicho VIVO, e o bot foi clicar e andar
+                    # para la.
+                    #
                     # O QUADRO DE ANTES DA MORTE, e nao o mais recente. A morte
                     # so e confirmada TARGET_GONE_READS leituras depois de a
                     # entrada sumir, e nesse meio-tempo o quadro ja mostra o
@@ -5197,6 +5344,12 @@ def run_bot():
                     if LOOT_NA_HORA:
                         saque_na_hora(leitura, teclado, caminho, loot_cd,
                                       odo_agora)
+                elif (avisa_sem_ver and caminho.get("leituras", 0)
+                      - caminho.get("ambiguo_em", -99)
+                      <= TARGET_GONE_READS + 2):
+                    print(f"[loot] a leitura da morte foi ambigua e nao sei "
+                          f"em que quadrado ele caiu; largo este corpo em vez "
+                          f"de chutar")
                 elif avisa_sem_ver:
                     # ERA SILENCIO, e e uma das duas metades de "nao vai no
                     # corpo": o bicho morreu e o bot nunca o VIU na tela, entao

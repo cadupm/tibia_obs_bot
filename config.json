@@ -48,7 +48,6 @@
   "LOOT_CLICA": true,
   "LOOT_BOTAO": "direito",
   "LOOT_MOD": "",
-  "LOOT_CLIQUES": 2,
   "LOOT_NA_HORA": true,
   "LOOT_ANTES_DE_ATACAR": true,
   "LOOT_ANTES_HP_MIN": 0.5,

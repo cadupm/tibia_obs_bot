@@ -190,9 +190,9 @@ for modo in ("stand", "chase", "kite"):
                           f"morte e o loot nao fecha")
         if not r["cliques"]:
             falhas.append(f"{rotulo}: nao clicou no corpo")
-        if r["cliques"] != main.LOOT_CLIQUES:
+        if r["cliques"] != 1:
             falhas.append(f"{rotulo}: {r['cliques']} clique(s) no corpo, "
-                          f"esperava exatamente {main.LOOT_CLIQUES}")
+                          f"esperava exatamente 1")
 
 # o gesto tem de ser o MESMO: nao e so "funciona em todos", e "funciona igual"
 # o gesto e o CLIQUE. As outras teclas do laco (atacar, andar, fechar menu) nao

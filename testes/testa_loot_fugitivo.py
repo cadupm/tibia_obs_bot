@@ -60,9 +60,26 @@ def barra(img, off):
 MORTO_EM = (1, 0)
 # dois bichos: o que morre (colado) e o que foge (tambem colado, no comeco)
 FUGITIVO_EM = (2, 0)
-TELA_DOIS = barra(barra(desenha(desenha(CHAO.copy(), MORTO_EM, (170, 40, 40)),
-                               FUGITIVO_EM, (170, 40, 40)),
-                        MORTO_EM), FUGITIVO_EM)
+# O FUGITIVO ANDA ATE SAIR DA TELA, um quadrado por leitura. Ele TELEPORTAVA de
+# (2,0) para fora, e isso e um mundo impossivel: bicho anda 1 SQM por vez, e a
+# barra dele e vista por ultimo na BORDA da area do jogo. A diferenca importa,
+# porque separar "andou para fora" de "morreu" e justamente o que o bot faz
+# olhando onde a barra sumiu - com o teleporte, as duas coisas ficam
+# indistinguiveis e o teste passava a exigir adivinhacao.
+FUGA = [(2 + i, 0) for i in range(MEIO_COL - 1)]      # ... ate a borda
+
+
+def tela_dupla(fugitivo_em):
+    """O que morre de pe e o fugitivo de pe, cada um com sua barra."""
+    img = desenha(desenha(CHAO.copy(), MORTO_EM, (170, 40, 40)),
+                  fugitivo_em, (170, 40, 40))
+    return barra(barra(img, MORTO_EM), fugitivo_em)
+
+
+TELA_DOIS = tela_dupla(FUGITIVO_EM)
+# o fugitivo JA SAIU da tela e o outro ainda esta vivo, apanhando: a saida de
+# um e a morte do outro sao eventos separados, em leituras diferentes
+TELA_SO_O_VIVO = barra(desenha(CHAO.copy(), MORTO_EM, (170, 40, 40)), MORTO_EM)
 # depois: o corpo no lugar do que morreu, e o fugitivo FORA DA TELA
 TELA_SO_CORPO = desenha(CHAO.copy(), MORTO_EM, (95, 75, 55))
 # variante: o fugitivo continua VISIVEL na tela
@@ -121,9 +138,14 @@ def roda(fugitivo_visivel, fugitivo_engajado):
         return (1, engajado, 0.9 if engajado else None,
                 [BICHO], BICHO if engajado else None)
 
-    roteiro = ([(2, True, 0.9, [BICHO, BICHO], BICHO)] * 8
+    # os dois vivos: o fugitivo ANDA para a borda e sai da tela, e so DEPOIS o
+    # outro morre. Sao dois eventos, em leituras diferentes - juntos na mesma
+    # leitura nao ha como saber qual barra foi qual.
+    antes = 8 + len(FUGA) + 3
+    roteiro = ([(2, True, 0.9, [BICHO, BICHO], BICHO)] * antes
                + [entrada(i) for i in range(40)])
-    telas = ([TELA_DOIS] * 8
+    telas = ([TELA_DOIS] * 8 + [tela_dupla(onde) for onde in FUGA]
+             + [TELA_SO_O_VIVO] * 3
              + [(TELA_COM_BICHO if fugitivo_visivel else TELA_SO_CORPO)] * 40)
 
     def agora():

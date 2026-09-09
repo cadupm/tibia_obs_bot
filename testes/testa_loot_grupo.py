@@ -245,9 +245,9 @@ if andou_na_briga:
 # personagem. Quem prova que ele foi a tres lugares diferentes sao os cliques
 # de MAPA, nao os cliques na tela.
 print(f"cliques em corpo depois da briga: {len(cliques)}")
-if len(cliques) != len(saques) * main.LOOT_CLIQUES:
+if len(cliques) != len(saques):
     falhas.append(f"{len(cliques)} clique(s) para {len(saques)} corpo(s): "
-                  f"esperava {main.LOOT_CLIQUES} por corpo")
+                  f"esperava 1 por corpo")
 
 # O QUE IMPORTA E TER AGIDO EM LUGARES DIFERENTES, e o caminho pode ser andar
 # (corpo longe) ou clicar noutro ponto da tela (corpo colado). Exigir trajeto de

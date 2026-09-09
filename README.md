@@ -123,6 +123,51 @@ se move entre a morte e o saque — offset guardado já envelheceu duas vezes ne
 projeto. A comparação tardia continua existindo como reserva, para quando a
 barra nunca foi vista sumir.
 
+**Mas barra que sumiu não é sempre morte.** Ela deixa de estar num quadrado por
+três motivos, e só um interessa:
+
+| o que aconteceu | a barra | a battle list |
+|---|---|---|
+| morreu ali | some | a entrada sai |
+| **andou** um quadrado | some do velho, **aparece** no novo | não muda |
+| **saiu da tela** | some, na **borda** | a entrada sai |
+
+Tratar os três como morte foi o estrago medido em caçada: *"o bot acerta o
+clique exatamente no corpo dele porém dá mais alguns cliques e passa do
+monstro"*. Os cliques a mais eram cliques de **andar**, atrás de corpos que não
+existiam — o registro estava cheio de quadrado de onde um bicho apenas tinha
+dado um passo, e a morte consumia "o desaparecimento mais recente", que sai de
+uma iteração de **conjunto**: ordem arbitrária. Medido à parte, em 5 arranjos de
+briga: 4 acertavam por sorte de *hash* e 1 apontava o quadrado de um passo.
+
+A peneira usa o que está na própria leitura, sem limiar:
+
+1. **a battle list tem de ter encolhido.** Ninguém saiu da lista, ninguém
+   morreu: barra que sumiu ali é passo, ou uma leitura em que a detecção
+   piscou. (Vale uma leitura de folga, porque lista e tela são duas capturas.)
+2. **passo é explicado por uma barra nova a 1 SQM.** Bicho anda um quadrado por
+   vez.
+3. **desaparecimento na borda da tela** é bicho que foi embora.
+
+E quando as contas não fecham — mais desaparecimentos do que barras novas para
+explicá-los, ou mais candidatos do que entradas que saíram da lista — o bot
+**não chuta**: diz no log que não sabe qual foi passo e qual foi morte, e larga
+aquele corpo. Perder um loot custa um loot; chutar custa clique em quadrado
+errado, uma caminhada para lugar nenhum e o personagem passando do monstro.
+
+Numa briga de melee todo mundo está a 1 SQM de todo mundo, então isso acontece
+de verdade: se dois bichos dão um passo na mesma leitura em que o terceiro
+morre, "A morreu e B andou" e "B morreu e A andou" descrevem as duas leituras
+igualmente bem, e nenhuma conta de posição decide. Medido: das três mortes,
+duas caem em leitura limpa e são pegas; a confusa se perde, sem inventar
+quadrado nenhum.
+
+**A reserva por imagem também não entra depois de leitura ambígua.** Ela compara
+imagem de quadrado, e o quadrado de onde um bicho saiu **andando** fica chão
+puro — que é justamente o que "mudou mais" desde que havia bicho ali. Medido:
+com três barras se mexendo na leitura da morte, ela marcou o quadrado de um
+bicho **vivo**, e o bot foi clicar e andar para lá.
+
 **A leitura de referência é a última em que ele ainda constava da lista**, achada
 pela **contagem de entradas** e não por um número fixo de leituras atrás. Era
 `historico[-(TARGET_GONE_READS + 1)]` — um chute. Com bicho sobrevivente na
@@ -213,8 +258,17 @@ meio da tela, e o cliente desenha barra sobre ele. Passada pela mesma conversão
 a barra dele tem de cair em `(0, 0)`; caindo em `(0, -1)`, a constante está um a
 menos. O `--kite` mede isso a cada leitura e no fim diz o valor a usar.
 
-Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): sem *classic control* o clique
-direito abre menu de contexto, que fica na frente e engole o que vier depois.
+**Um clique, e só um** — e a tecla de saque **colada nele**, sem nada no meio.
+O primeiro clique direito no corpo abre a bolsa, e ela aparece *sobre* a área do
+jogo: um segundo clique no mesmo pixel cai na janela que o primeiro abriu, e ali
+ele é clique direito num item — menu de contexto, que fica na frente e engole a
+tecla. Isso já foi a opção `LOOT_CLIQUES`; ela sobrou valendo 2 numa config
+salva, e era exatamente o clique a mais.
+
+Depois da tecla sai um `esc` (`LOOT_FECHA_MENU`): sem *classic control* o clique
+direito abre menu de contexto, que fica na frente e engole o que vier depois. Ele
+ficava **antes** da tecla, o que é a ordem errada: entre clicar no corpo e
+apertar o `-` não pode haver nada.
 
 **A fila é de vários corpos** (`LOOT_MAX_CORPOS`): mata-se o grupo todo e depois
 se recolhe. Duas mortes no mesmo quadrado contam como uma. Fazer isso funcionar
@@ -732,6 +786,28 @@ O código está comentado com o *porquê* de cada uma delas.
   invariante: quatro bichos, a moldura passando adiante, e a exigência de que
   cada morte seja detectada quando a lista **não** esvazia.
 
+- **Um sinal discreto ainda pode ter mais de uma causa.** "Bicho morto perde a
+  barra de vida" é um fato do cliente, e resolveu a localização do corpo. Só que
+  a recíproca não vale: barra também deixa de estar num quadrado quando o bicho
+  **anda** ou quando ele **sai da tela**. Faltava a segunda metade do
+  raciocínio — o que mais produz este mesmo sinal? Sem ela, todo passo de bicho
+  entrava no registro como corpo.
+
+- **Empate resolvido por ordem de `set` acerta na maioria das vezes, e é isso
+  que o esconde.** A morte consumia "o desaparecimento mais recente", e com
+  vários numa leitura o mais recente saía de uma iteração de conjunto. Em 5
+  arranjos de briga, 4 acertavam — por sorte de *hash* das posições. Um teste
+  com um arranjo só passava e não media nada; o mesmo teste com cinco reprovou
+  o bot em todos, uma vez que a leitura da morte deixou de ser limpa.
+
+- **Falso que teleporta mede adivinhação.** O teste do fugitivo tirava o bicho
+  de (2,0) e o punha fora da tela na leitura seguinte. Bicho anda 1 SQM por vez,
+  e é *onde* a barra é vista por último que separa "andou para fora" de
+  "morreu" — com o teleporte as duas ficam indistinguíveis, e o teste passou a
+  exigir que o bot escolhesse uma das duas no chute. Ele voltou a andar até a
+  borda, um quadrado por leitura, e a saída dele e a morte do outro passaram a
+  ser eventos de leituras diferentes, como são no jogo.
+
 - **Campo de texto vazio virava a palavra "None".** A GUI gravava vazio como
   `None`, o json escreve `null`, e o carregador fazia `str(None)` — então
   `LOOT_MOD` valia `"None"` e o clique segurava uma tecla com esse nome. Vazio
@@ -865,6 +941,7 @@ python testes/testa_barra_sumiu.py    # o corpo está onde uma barra de vida des
 python testes/testa_corpo_onde_morreu.py  # o corpo sai onde ele morreu, não onde foi engajado
 python testes/testa_loot_precisao.py  # a aproximação cai no pixel do quadrado, sem escala
 python testes/testa_loot_quatro.py    # 4 bichos, 3 marcados: os 3 corpos são pegos
+python testes/testa_loot_movimento.py # barra que andou não entra como morte
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI
