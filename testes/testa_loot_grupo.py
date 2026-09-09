@@ -16,9 +16,10 @@ personagem apanha de graca; e corpo no Tibia dura minutos, entao nao ha pressa.
 
 O que se mede aqui, no laco de verdade (run_bot):
   - cada morte grava UM corpo, e nao so a ultima;
-  - nenhum saque acontece enquanto ha bicho na battle list;
-  - depois da lista esvaziar, todos os corpos sao visitados;
-  - cada corpo leva um clique, no proprio quadrado dele.
+  - corpo COLADO e saqueado na hora, mesmo com bicho na lista: clicar num corpo
+    ao lado nao e ordem de movimento;
+  - NAO se anda (clique de mapa) ate corpo enquanto ha bicho na briga;
+  - todos os corpos sao saqueados, cada um com um clique no quadrado dele.
 """
 import io
 import os
@@ -201,7 +202,8 @@ if os.environ.get("VERBOSO"):
         if "[attack]" in _l or "[loot]" in _l:
             print("   " + _l)
 mortes = [l for l in log.splitlines() if "bicho morreu a" in l]
-saques = [l for l in log.splitlines() if "Saqueado" in l]
+saques = [l for l in log.splitlines()
+          if "Saqueado" in l or "saqueio na hora" in l]
 cliques = [f for f in fita if f[1] == "clique"]
 
 print(f"tres bichos na lista, morrendo um por um\n")
@@ -219,16 +221,22 @@ if len(mortes) < 3:
 if len(saques) < 3:
     falhas.append(f"saqueou {len(saques)} corpo(s) de 3")
 
-# NENHUM saque enquanto havia bicho na lista
+# CLICAR NUM CORPO COLADO durante a briga E PERMITIDO: nao e ordem de
+# movimento, e o que troca chase por stand no cliente e movimento (tecla de
+# direcao, clique no mapa). O que NAO pode e ANDAR ate corpo durante a briga:
+# isso e clique no mapa, e leva o personagem para dentro do que sobrou.
 ultimo_com_bicho = max(i for i, v in enumerate(VIVOS_POR_QUADRO) if v)
-cedo = [c for c in cliques if c[0] <= ultimo_com_bicho]
+na_briga = [c for c in cliques if c[0] <= ultimo_com_bicho]
+andou_na_briga = [f for f in fita
+                  if f[1] == "mapa" and f[0] <= ultimo_com_bicho]
 print(f"\nultimo quadro com bicho vivo na lista: {ultimo_com_bicho}")
-print(f"cliques em corpo durante a briga: {len(cedo)} "
-      f"(quadros {[c[0] for c in cedo]})")
-if cedo:
-    falhas.append(f"clicou em corpo {len(cedo)}x com bicho ainda na battle "
-                  f"list: clique na tela durante o ataque troca o modo de luta "
-                  f"de chase para stand no cliente")
+print(f"cliques em corpo COLADO durante a briga: {len(na_briga)} "
+      f"(permitido: nao e movimento)")
+print(f"cliques de MAPA durante a briga: {len(andou_na_briga)}")
+if andou_na_briga:
+    falhas.append(f"andou {len(andou_na_briga)}x ate corpo com bicho ainda na "
+                  f"battle list: clique no mapa e ordem de movimento, troca "
+                  f"chase por stand no cliente e leva para dentro do bicho")
 
 # um clique por corpo. O PONTO na tela e sempre o do meio, e isso esta certo:
 # ele ANDA ate o corpo, entao na hora de clicar o corpo esta debaixo do

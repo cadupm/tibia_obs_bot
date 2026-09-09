@@ -19,9 +19,11 @@ abandona. Bicho fora da tela esta a mais de 7 SQM de lado ou 5 de altura - nao
 alcanca o personagem e nao esta sendo atacado.
 
 O que se mede aqui:
-  - com o fugitivo na lista e NADA na tela, o corpo e saqueado;
-  - com bicho na tela, o saque espera (a razao de esperar continua valendo);
-  - com alvo ENGAJADO, o saque espera - mesmo que a tela nao mostre nada.
+  - o corpo COLADO e saqueado NA HORA, com bicho por perto ou nao: clicar num
+    corpo ao lado nao e ordem de movimento, e o que troca chase por stand no
+    cliente e movimento (tecla de direcao, clique no mapa);
+  - NAO se anda ate corpo longe com bicho perto: esse limite continua valendo;
+  - com o fugitivo na lista e nada na tela, nada trava.
 """
 import io
 import os
@@ -184,36 +186,59 @@ def roda(fugitivo_visivel, fugitivo_engajado):
     log = saida.getvalue()
     return {
         "marcou": "[loot] bicho morreu" in log,
-        "saqueou": "Saqueado" in log,
+        "saqueou": "Saqueado" in log or "saqueio na hora" in log,
+        "na_hora": "saqueio na hora" in log,
         "cliques": sum(1 for a in fita if a[0] == "clique"),
+        "andou": sum(1 for a in fita if a[0] == "mapa"),
         "log": log,
     }
 
 
 falhas = []
 print("dois bichos, um morre, o outro fica na battle list:\n")
-print(f"  {'fugitivo':<24} {'marcou':<7} {'saqueou':<8} cliques")
+print(f"  {'fugitivo':<24} {'marcou':<7} {'saqueou':<8} {'na hora':<8} "
+      f"{'cliques':>7} {'andou':>6}")
 
 casos = (("fora da tela, solto", False, False),
          ("visivel na tela", True, False),
          ("engajado (moldura)", False, True))
+resultados = {}
 for rotulo, visivel, engajado in casos:
     r = roda(visivel, engajado)
+    resultados[rotulo] = r
     print(f"  {rotulo:<24} {str(r['marcou']):<7} {str(r['saqueou']):<8} "
-          f"{r['cliques']}")
+          f"{str(r['na_hora']):<8} {r['cliques']:>7} {r['andou']:>6}")
     if not r["marcou"]:
-        falhas.append(f"{rotulo}: nao marcou o corpo")
-    if rotulo.startswith("fora da tela"):
-        if not r["saqueou"]:
-            falhas.append("fugitivo FORA DA TELA e o saque nao aconteceu: "
-                          "bicho a mais de 7 SQM nao alcanca o personagem nem "
-                          "esta sendo atacado, e o corpo do lado envelhece "
-                          "ate vencer o prazo. Era o caso do log de cacada")
-    else:
-        if r["saqueou"]:
-            falhas.append(f"{rotulo}: saqueou com bicho perto. Clique na tela "
-                          f"durante o ataque troca chase por stand no "
-                          f"cliente, e parado no corpo se apanha de graca")
+        falhas.append(f"{rotulo}: nao marcou o corpo, e sem isso nao ha o que "
+                      f"saquear")
 
-print("\nVEREDITO:", "OK - fugitivo longe nao trava o saque; bicho perto trava"
+# 1) O CORPO COLADO E SAQUEADO NA HORA, com bicho por perto ou nao. Clicar num
+# corpo ao lado nao e ordem de movimento, e o que troca chase por stand no
+# cliente e movimento (tecla de direcao, clique no mapa). Esperar so dava tempo
+# de o personagem se afastar em kite e o corpo sair da tela.
+for rotulo in ("fora da tela, solto", "visivel na tela"):
+    if not resultados[rotulo]["saqueou"]:
+        falhas.append(f"{rotulo}: o corpo estava COLADO e nao foi saqueado. "
+                      f"Saquear ao lado nao exige andar, entao nao ha o que "
+                      f"esperar")
+
+# 2) NAO SE ANDA ATE CORPO COM BICHO PERTO. Este e o limite que continua
+# valendo: chegar num corpo longe e clique no mapa, que e ordem de movimento e
+# leva o personagem para dentro do que sobrou da briga.
+engajado_r = resultados["engajado (moldura)"]
+print(f"\ncom alvo engajado: {engajado_r['andou']} clique(s) de mapa para corpo")
+if engajado_r["andou"]:
+    falhas.append(f"andou {engajado_r['andou']}x ate corpo com alvo ENGAJADO: "
+                  f"clique no mapa e ordem de movimento, troca chase por stand "
+                  f"e leva o personagem para dentro do bicho")
+
+# 3) o caso do log de cacada: fugitivo fora da tela nao pode travar nada
+fora = resultados["fora da tela, solto"]
+print(f"fugitivo fora da tela: saqueou? {fora['saqueou']}")
+if not fora["saqueou"]:
+    falhas.append("fugitivo FORA DA TELA travou o saque: bicho a mais de 7 SQM "
+                  "nao alcanca o personagem nem esta sendo atacado. Era o caso "
+                  "do log de cacada")
+
+print("\nVEREDITO:", "OK - corpo colado saqueia na hora; corpo longe espera"
       if not falhas else "FALHOU: " + "; ".join(falhas))

@@ -164,10 +164,21 @@ não anda: quem anda é o personagem, e offset guardado envelhece a cada passo.
 Corrigir esse envelhecimento a cada leitura foi a origem de dois bugs seguidos.
 Posição absoluta não precisa de correção: a conta é sempre a mesma subtração.
 
-**Por que esperar**, em vez de saquear a cada morte: no cliente, clique no mapa
-ou na tela durante o ataque troca o modo de luta de *chase* para *stand*; parado
-em cima do corpo com bicho vivo em volta o personagem apanha de graça; e corpo no
-Tibia dura minutos, então não há pressa.
+**Quando saquear: a pergunta certa é distância, não tempo.** O que troca *chase*
+por *stand* no cliente é uma **ordem de movimento** — tecla de direção ou clique
+no mapa. Clique direito num corpo é um "usar", não um andar. Daí:
+
+- **corpo colado** (`LOOT_NA_HORA`): saqueia **na hora**, mesmo com bicho vivo em
+  volta. Não envolve andar, e ganha a posição mais fresca que existe — sem risco
+  de o corpo sair da tela, sem deriva de odometria, sem fila para percorrer
+  depois. Em kite isso importa: o bot se afasta dos bichos, então se afasta do
+  corpo, e um corpo fora da área do jogo é largado;
+- **corpo longe**: fica na fila. Chegar nele exige clique no mapa, que é
+  movimento e leva o personagem para dentro do que sobrou da briga.
+
+Uma consequência: o `esc` de fechar menu **não sai durante a briga**. Ele para
+todas as ações no cliente — solta o alvo engajado e, em kite, corta o passo de
+fuga. Com briga em andamento, um menu de contexto aberto é o menor dos males.
 
 **Mas esperar a battle list VAZIA travava o saque para sempre** quando um bicho
 fugia da tela: a entrada dele não sai da lista enquanto ele estiver vivo, e o

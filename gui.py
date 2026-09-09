@@ -128,6 +128,8 @@ ABAS = [
              "shift, ctrl, alt ou vazio"),
             ("LOOT_CLIQUES", "Cliques por corpo", int,
              "1 basta: clicou nele, esta saqueado"),
+            ("LOOT_NA_HORA", "Saquear na hora o que esta colado", bool,
+             "sem esperar a briga: clicar ao lado nao e movimento"),
             ("LOOT_FECHA_MENU", "Fechar menu depois do clique", bool,
              "menu de contexto aberto engole clique e tecla"),
             ("LOOT_TECLA", "Tecla de saque, no corpo", str,

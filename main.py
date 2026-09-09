@@ -309,6 +309,18 @@ LOOT_DIFF_MARGEM = 1.5          # o vencedor tem de mudar este tanto mais que o
                                 # chao (agua, fogo) ganharia por pouco de um
                                 # quadrado que mudou de verdade.
 
+LOOT_NA_HORA = True             # saquear na hora o corpo que esta COLADO
+                                # (dentro de LOOT_DIST), sem esperar a briga
+                                # acabar. Nao envolve andar, e andar e que troca
+                                # chase por stand no cliente - clique direito
+                                # num corpo e "usar", nao ordem de movimento.
+                                # Esperar dava mais trabalho e mais risco: em
+                                # kite o personagem se afasta e o corpo sai da
+                                # tela, a odometria deriva, e a fila cresce.
+                                # Corpo LONGE continua esperando: chegar nele
+                                # exige clique no mapa, que e movimento e leva
+                                # para dentro do que sobrou.
+
 LOOT_MAX_CORPOS = 4             # corpos na fila de saque. Guardar UM so deixava
                                 # no chao todo bicho da briga menos o ultimo -
                                 # numa caverna se mata em grupo.
@@ -3833,7 +3845,8 @@ def aperta_saque(teclado=None):
     return saiu
 
 
-def clica_no_corpo(leitura, quadrado, teclado=None, distancia=None):
+def clica_no_corpo(leitura, quadrado, teclado=None, distancia=None,
+                   lutando=False):
     """
     Clica no quadrado do corpo, com o botao configurado.
 
@@ -3853,8 +3866,12 @@ def clica_no_corpo(leitura, quadrado, teclado=None, distancia=None):
             click_game(x, y, botao=LOOT_BOTAO, mod=LOOT_MOD)
             time.sleep(LOOT_CLIQUE_PAUSA)
         cliques = max(LOOT_CLIQUES, 1)
-        if LOOT_FECHA_MENU and STOP_WALK_KEY:
-            # menu de contexto aberto fica na frente e engole clique e tecla
+        if LOOT_FECHA_MENU and STOP_WALK_KEY and not lutando:
+            # menu de contexto aberto fica na frente e engole clique e tecla.
+            #
+            # SO FORA DA BRIGA: no cliente esta tecla para TODAS as acoes, o
+            # que inclui soltar o alvo. Apertada com bicho engajado, o saque na
+            # hora custaria o alvo, e o proximo ataque teria de reengajar.
             if teclado is not None and not teclado.isActive:
                 focus_window(teclado)
             pyautogui.press(STOP_WALK_KEY)
@@ -3876,6 +3893,48 @@ def clica_no_corpo(leitura, quadrado, teclado=None, distancia=None):
     else:
         teclas = []
     return cliques, teclas
+
+
+def saque_na_hora(leitura, teclado, estado, loot_cd, odo=None):
+    """
+    Saqueia agora os corpos da fila que estao ao alcance, sem sair do lugar.
+
+    Roda logo depois da morte, com bicho vivo em volta - e isso e seguro porque
+    NAO ANDA: o que troca chase por stand no cliente e ordem de movimento
+    (tecla de direcao, clique no mapa), e clique direito num corpo e "usar".
+
+    Esperar a briga acabar para saquear tudo parecia mais prudente e saiu mais
+    caro: em kite o personagem se afasta dos bichos, entao se afasta do corpo -
+    que chega a sair da tela e ser largado; a odometria deriva enquanto a fila
+    espera; e cada corpo da fila vira uma viagem de volta depois.
+
+    O que esta LONGE fica na fila. Chegar nele exige clique no mapa, que e
+    movimento e leva o personagem para dentro do que sobrou da briga.
+    """
+    corpos = estado.get("corpos") or []
+    if not ENABLE_LOOT or not corpos:
+        return 0
+    feitos = 0
+    for corpo in list(corpos):
+        onde = onde_esta_o_corpo(corpo, odo)
+        if max(abs(onde[0]), abs(onde[1])) > LOOT_DIST:
+            continue                       # esse precisa de caminhada: fica
+        quadrado = (int(round(onde[0])), int(round(onde[1])))
+        if not dentro_da_tela(quadrado):
+            continue
+        if not teclado.isActive:
+            focus_window(teclado)
+        n, teclas = clica_no_corpo(leitura, quadrado, teclado,
+                                   max(abs(onde[0]), abs(onde[1])),
+                                   lutando=estado.get("lutando", False))
+        loot_cd.mark()
+        corpos.remove(corpo)
+        feitos += 1
+        print(f"[loot] corpo colado em {quadrado}: saqueio na hora, sem "
+              f"esperar a briga ({n} clique(s)"
+              + (f" + tecla {' e '.join(repr(t) for t in teclas)}" if teclas
+                 else "") + ")")
+    return feitos
 
 
 def loot(leitura, teclado, estado, loot_cd, odo=None):
@@ -3992,7 +4051,8 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
                   f"largo ele")
             corpos.pop(0)
             return bool(corpos)
-        n, teclas = clica_no_corpo(leitura, quadrado, teclado, distancia)
+        n, teclas = clica_no_corpo(leitura, quadrado, teclado, distancia,
+                                   lutando=estado.get("lutando", False))
         loot_cd.mark()
         feito = []
         if n:
@@ -4672,6 +4732,16 @@ def run_bot():
                         # lugar mais provavel.
                         marca_o_corpo(caminho, onde, odo_agora,
                                       visto_em=visto_em)
+
+                    # SAQUE NA HORA do que esta COLADO. Nao envolve andar, e
+                    # andar e que troca chase por stand no cliente; clique
+                    # direito num corpo e "usar". Esperar a briga acabar dava
+                    # mais trabalho e mais risco: em kite o personagem se afasta
+                    # e o corpo sai da tela, a odometria deriva, e a fila cresce
+                    # para percorrer depois. O que exige andar continua na fila.
+                    if LOOT_NA_HORA:
+                        saque_na_hora(leitura, teclado, caminho, loot_cd,
+                                      odo_agora)
                 else:
                     # ERA SILENCIO, e e uma das duas metades de "nao vai no
                     # corpo": o bicho morreu e o bot nunca o VIU na tela, entao
@@ -4752,6 +4822,12 @@ def run_bot():
             so_inuteis = lista_inutil == assinatura
             lutando = ((entradas > 0 and not so_inuteis)
                        or bool(alvo) or not pode_trocar)
+            # O LOOT LE ISTO para decidir se pode apertar a tecla de parada
+            # depois do clique. Ela para TODAS as acoes no cliente: solta o
+            # alvo engajado e, em kite, corta o passo de fuga. Enquanto houver
+            # briga, o menu de contexto aberto e o menor dos males - ele so
+            # atrapalha o proximo clique, e a tecla atrapalharia a luta.
+            caminho["lutando"] = lutando
 
             # 4) kite: e comportamento de COMBATE, nao de rota - roda mesmo com o
             # andar desligado. Ficava dentro do bloco da rota e nao acontecia nada
