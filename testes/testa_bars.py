@@ -35,10 +35,19 @@ def check(nome, det, esp, esperado_frac=None):
         print(f"        leitura   hp={leit[0]:.1%} (esp {esperado_frac[0]:.0%})  "
               f"mana={leit[1]:.1%} (esp {esperado_frac[1]:.0%})")
 
-real = np.load("obs3.png.npy")[23:]
-usar(real)
-check("REAL 1920x1009 (155/155 e 60/60)", main.detect_bars(None),
-      ((12,5,769,12), (788,5,768,12)), (1.0, 1.0))
+# O caso REAL depende de uma captura da sua tela, que nao vai para o
+# repositorio. Sem ela o teste estourava inteiro e levava junto os casos
+# sinteticos, que nao dependem de nada. Agora so este caso e pulado.
+_REAL = AQUI + "obs3.png"
+if os.path.exists(_REAL):
+    sys.path.insert(0, AQUI)
+    import png as _png
+    usar(_png.le(_REAL)[23:])
+    check("REAL 1920x1009 (155/155 e 60/60)", main.detect_bars(None),
+          ((12,5,769,12), (788,5,768,12)), (1.0, 1.0))
+else:
+    print(f"PULADO o caso real: falta {_REAL}")
+    print("  (captura da sua tela; os casos sinteticos abaixo rodam do mesmo jeito)")
 
 casos = [(1280,(8,470),(478,940),0.55,0.60,(0,190,0)),
          (2560,(16,1040),(1048,2072),0.85,0.35,(0,190,0)),
@@ -76,3 +85,6 @@ else:
     print(f"FALHA TELA TODA VERDE aceitou {det}")
 
 print(f"\n{ok}/{total} casos exatos")
+
+print("VEREDITO:", "OK - acha as barras em todas as larguras testadas"
+      if ok == total else f"FALHOU: {total - ok} caso(s) errados")

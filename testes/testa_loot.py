@@ -70,6 +70,14 @@ main.time = type("T", (), {"time": staticmethod(lambda: relogio["t"]),
                            "sleep": staticmethod(lambda s: None)})()
 
 
+def ponto_para_off(p):
+    """Volta do ponto na tela para o offset em SQM: o inverso de mirar."""
+    vx, vy, vw, vh = main.GAME_VIEW
+    mc, ml = (vw // main.TILE_PX) // 2, (vh // main.TILE_PX) // 2
+    return (round((p[0] - vx) / main.TILE_PX - 0.5 - mc),
+            round((p[1] - vy) / main.TILE_PX - 0.5 - ml))
+
+
 def saqueia_ate_o_fim(estado, voltas=40):
     """Roda o loot ate ele largar o corpo, como o laco faria."""
     for _ in range(voltas):
@@ -80,15 +88,16 @@ def saqueia_ate_o_fim(estado, voltas=40):
 
 
 falhas = []
-QUADRADOS = len(main.quadrados_do_saque((0, 0)))
-POR_QUADRADO = main.LOOT_TENTATIVAS
+FILA = main.fila_do_saque()
+QUADRADOS = len(set(FILA))
+APERTADAS = len(FILA)
 print(f"tecla de saque: {main.LOOT_HOTKEY!r}"
       + (f" + {main.NUMPAD_DO_SINAL[main.LOOT_HOTKEY]!r} (numpad)"
          if main.LOOT_HOTKEY_NUMPAD and main.LOOT_HOTKEY in main.NUMPAD_DO_SINAL
          else "")
       + f" | alcance: {main.LOOT_DIST} SQM")
-print(f"varredura: {QUADRADOS} quadrado(s) x {POR_QUADRADO} apertada(s), "
-      f"{main.LOOT_POR_VEZ} por leitura\n")
+print(f"varredura: {QUADRADOS} quadrado(s) em {APERTADAS} apertada(s) "
+      f"(teto {main.LOOT_MAX_APERTADAS}), {main.LOOT_POR_VEZ} por leitura\n")
 
 # ----------------------------------------- 1) em stand: o corpo esta colado
 estado = {}
@@ -101,13 +110,12 @@ print(f"corpo colado (1 SQM): {miradas} mirada(s), {len(cliques)} clique(s), "
       f"terminou? {acabou}")
 if not acabou:
     falhas.append("colado: a varredura nunca terminou")
-if miradas != QUADRADOS * POR_QUADRADO:
-    falhas.append(f"colado: {miradas} miradas, esperava "
-                  f"{QUADRADOS * POR_QUADRADO}")
+if miradas != APERTADAS:
+    falhas.append(f"colado: {miradas} miradas, esperava {APERTADAS}")
 if cliques:
     falhas.append("colado: andou sem precisar")
 
-# ------------------------- 1b) varreu QUADRADOS DIFERENTES, e nao o mesmo 27x
+# ---------------------- 1b) varreu QUADRADOS DIFERENTES, e nao o mesmo N vezes
 alvos = {m for m in mirado}
 print(f"  quadrados distintos mirados: {len(alvos)} (esperava {QUADRADOS})")
 if len(alvos) != QUADRADOS:
@@ -183,10 +191,10 @@ antes = len(mirado)
 acabou = saqueia_ate_o_fim(estado)
 print(f"prazo estourado no MEIO da varredura: continuou? "
       f"{len(mirado) > antes} ({len(mirado)} miradas no total)")
-if len(mirado) != QUADRADOS * POR_QUADRADO:
+if len(mirado) != APERTADAS:
     falhas.append(f"o prazo cortou a varredura pela metade: {len(mirado)} "
-                  f"miradas de {QUADRADOS * POR_QUADRADO} - metade do loot "
-                  f"ficaria dentro do corpo")
+                  f"miradas de {APERTADAS} - metade do loot ficaria dentro "
+                  f"do corpo")
 
 # ------------------------------------------- 5) desligado nao faz nada
 main.ENABLE_LOOT = False
@@ -237,6 +245,68 @@ print(f"corpo novo com {sobrou} quadrados pendentes do anterior: fila agora "
 if estado.get("loot_fila") is not None:
     falhas.append("o corpo novo herdou a fila do anterior: varreria em volta "
                   "do corpo errado")
+
+# ---- 9) o personagem anda NO MEIO da varredura: os quadrados acompanham o corpo
+# A fila guardava offsets do PERSONAGEM. Um passo no meio da varredura e todo o
+# resto dela mirava um quadrado ao lado - justamente o erro que a varredura
+# existe para cobrir.
+odo.pos = [0, 0]
+estado = {}
+main.marca_o_corpo(estado, (1, 0), odo)
+mirado.clear()
+main.loot(Janela(), Janela(), estado, SemEspera(), odo)   # comeca a varrer
+odo.pos = [2, 0]                       # anda 1 SQM: o corpo cai para offset 0
+saqueia_ate_o_fim(estado)
+varridos = {ponto_para_off(m) for m in mirado[main.LOOT_POR_VEZ:]}
+print(f"\nandou 1 SQM no meio da varredura: o corpo passou de (1,0) para (0,0)")
+print(f"  os quadrados varridos depois disso cobrem (0,0)? {(0, 0) in varridos}")
+if (0, 0) not in varridos:
+    falhas.append("a fila envelheceu: depois do passo, a varredura nao cobre "
+                  "mais o quadrado do corpo")
+
+# ---- 10) corpo que sai do alcance NAO pode prender a cacada para sempre
+# loot() devolvendo True SEGURA A ROTA. Com a varredura ja montada, o prazo era
+# pulado - e um corpo fora de alcance prendia o bot para sempre, sem erro.
+odo.pos = [0, 0]
+estado = {}
+main.marca_o_corpo(estado, (1, 0), odo)
+main.loot(Janela(), Janela(), estado, SemEspera(), odo)   # monta a fila
+odo.pos = [-40, 0]                     # o corpo fica longe
+main.click_minimap = lambda _w, _p: None                  # e nao da para voltar
+relogio["t"] += main.LOOT_PRAZO + 1
+preso = True
+for _ in range(80):
+    relogio["t"] += 1.0
+    if not main.loot(Janela(), Janela(), estado, SemEspera(), odo):
+        preso = False
+        break
+main.click_minimap = clica
+print(f"corpo fora de alcance com a varredura comecada: "
+      f"{'PRESO para sempre' if preso else 'desistiu e liberou a rota'}")
+if preso:
+    falhas.append("corpo inalcancavel com a fila montada prende a rota para "
+                  "sempre: o bot para de cacar sem uma linha de erro")
+
+# ---- 11) teto de apertadas, sem perder cobertura
+print(f"\nfila de um corpo: {APERTADAS} apertada(s) (teto "
+      f"{main.LOOT_MAX_APERTADAS}) cobrindo {QUADRADOS} quadrado(s)")
+if APERTADAS > main.LOOT_MAX_APERTADAS:
+    falhas.append(f"a fila passa do teto: {APERTADAS}")
+esperados = len(main.quadrados_do_saque())
+if QUADRADOS != esperados:
+    falhas.append(f"o teto cortou a COBERTURA: {QUADRADOS} quadrados de "
+                  f"{esperados}. Em rodadas do anel, cortar no teto so tira "
+                  f"repeticao - se tirou quadrado, a fila voltou a ser em "
+                  f"blocos")
+
+# ---- 12) quadrado fora da area do jogo nao leva o cursor para o painel
+_vx, _vy, vw, vh = main.GAME_VIEW
+borda = ((vw // main.TILE_PX) // 2, 0)
+print(f"quadrado na borda {borda}: na tela? {main.dentro_da_tela(borda)}; "
+      f"um alem, {(borda[0] + 1, 0)}: {main.dentro_da_tela((borda[0] + 1, 0))}")
+if not main.dentro_da_tela(borda) or main.dentro_da_tela((borda[0] + 1, 0)):
+    falhas.append("dentro_da_tela nao corta na borda da area do jogo: com "
+                  "LOOT_DIST alto o cursor iria parar no painel lateral")
 
 print("\nVEREDITO:", "OK - vai ate o corpo, varre os quadrados e volta a rota"
       if not falhas else "FALHOU: " + "; ".join(falhas))

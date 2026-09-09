@@ -265,6 +265,13 @@ LOOT_VARRE = True               # varrer os quadrados em volta, e nao so o
 LOOT_VARRE_RAIO = 1             # SQM em volta do estimado (1 = os 9 quadrados)
 LOOT_POR_VEZ = 3                # quadrados varridos por leitura: a varredura
                                 # inteira numa leitura so seguraria a cura
+LOOT_MAX_APERTADAS = 24         # teto de apertadas por corpo. 9 quadrados x
+                                # LOOT_TENTATIVAS x 2 teclas dava 54 acoes em
+                                # ~4s, muito acima do que uma pessoa faz - o
+                                # servidor tem protecao contra enxurrada de
+                                # acao. A fila e em RODADAS do anel inteiro,
+                                # entao cortar no teto nunca deixa um quadrado
+                                # sem nenhuma tentativa.
 LOOT_COOLDOWN = 0.45            # s entre apertadas
 LOOT_MIRA_PAUSA = 0.08          # s entre mirar o cursor e apertar a tecla
 LOOT_PRAZO = 8.0                # s tentando chegar no corpo antes de desistir:
@@ -336,7 +343,64 @@ def atualiza_passos():
     """
     global KITE_PASSOS
     KITE_PASSOS = monta_passos()
-    return KITE_PASSOS
+
+
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "config.json")
+
+
+def carrega_config(caminho=None):
+    """
+    Le o config.json e aplica por cima das constantes deste modulo.
+
+    So a GUI lia esse arquivo. Rodando pela linha de comando - inclusive os
+    modos de diagnostico - o bot usava os valores PADRAO do codigo, e nao os
+    seus: `--loot` conferia a tecla '-' mesmo com outra configurada na GUI, e
+    `--teclas` media as diagonais padrao. Diagnostico que mede outra
+    configuracao que nao a sua responde a pergunta errada.
+
+    Aplica so o que ja existe aqui como constante MAIUSCULA, convertendo para o
+    tipo do valor atual: chave estranha no arquivo nao vira atributo novo, e
+    numero escrito como texto nao vira texto. Devolve quantas chaves entraram.
+
+    A GUI segue aplicando a dela depois de importar, entao ela continua mandando
+    quando e ela quem esta no comando.
+    """
+    caminho = caminho or CONFIG_FILE
+    if not os.path.exists(caminho):
+        return 0
+    try:
+        with open(caminho, encoding="utf-8") as arquivo:
+            cfg = json.load(arquivo)
+    except (OSError, ValueError) as erro:
+        print(f"[config] {caminho} ilegivel ({erro}); sigo com os padroes")
+        return 0
+    if not isinstance(cfg, dict):
+        return 0
+    entraram = 0
+    for chave, valor in cfg.items():
+        if not chave.isupper() or chave not in globals():
+            continue
+        atual = globals()[chave]
+        try:
+            if isinstance(atual, bool):
+                valor = bool(valor)
+            elif isinstance(atual, int) and not isinstance(valor, bool):
+                valor = int(float(valor))   # "5.0" tambem e cinco
+            elif isinstance(atual, float):
+                valor = float(valor)
+            elif isinstance(atual, str):
+                valor = str(valor)
+        except (TypeError, ValueError):
+            print(f"[config] {chave}={valor!r} nao serve para {type(atual).__name__}; "
+                  f"mantenho {atual!r}")
+            continue
+        globals()[chave] = valor
+        entraram += 1
+    atualiza_passos()      # as teclas de andar vem da configuracao
+    return entraram
+
+
 # Quadrados em que NAO se pisa: escada, buraco, portal. Sao ensinados por
 # clique ("python main.py --evitar") e guardados em evitar.json. A comparacao e
 # por assinatura reduzida (um pixel a cada 4), que aguenta a animacao do chao.
@@ -1333,25 +1397,51 @@ def aperta_saque():
         pyautogui.press(gemea)
 
 
-def quadrados_do_saque(onde):
+def quadrados_do_saque():
     """
-    Os quadrados a tentar, do estimado para fora.
+    Os DELTAS a tentar em volta do corpo, do centro para fora.
 
     O offset do corpo vem de odometria e de uma barra de vida lida uma leitura
     antes da morte: errar por 1 SQM e comum, e saque no quadrado vizinho ao
     corpo nao pega nada. Varrer o anel em volta custa uma apertada de tecla por
     quadrado vazio - nada - e transforma "errou por 1" em "pegou".
+
+    Sao DELTAS, e nao offsets prontos do personagem, de proposito: o personagem
+    pode andar no meio da varredura, e offset dele envelhece. Quem soma a
+    posicao atual do corpo e quem aperta.
     """
-    centro = (int(round(onde[0])), int(round(onde[1])))
     if not LOOT_VARRE:
-        return [centro]
+        return [(0, 0)]
     r = LOOT_VARRE_RAIO
-    volta = [(centro[0] + dx, centro[1] + dy)
-             for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
+    volta = [(dx, dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
     # o estimado primeiro, e depois os vizinhos do mais perto para o mais longe
-    volta.sort(key=lambda q: (abs(q[0] - centro[0]) + abs(q[1] - centro[1]),
-                              abs(q[0]), abs(q[1])))
+    volta.sort(key=lambda d: (abs(d[0]) + abs(d[1]), abs(d[0]), abs(d[1])))
     return volta
+
+
+def fila_do_saque():
+    """
+    A fila de apertadas de um corpo, em RODADAS do anel inteiro.
+
+    Em blocos (quadrado A tres vezes, depois B tres vezes) o teto de apertadas
+    cortaria a fila deixando os ultimos quadrados sem nenhuma tentativa - e o
+    quadrado certo pode ser justamente um deles, ja que a posicao do corpo e
+    estimada. Em rodadas, cortar no teto so tira repeticao, nunca cobertura.
+
+    Os itens sao DELTAS EM TORNO DO CORPO, nao offsets do personagem: o
+    personagem pode andar no meio da varredura, e offset dele envelhece.
+    """
+    anel = quadrados_do_saque()
+    fila = [d for _ in range(max(LOOT_TENTATIVAS, 1)) for d in anel]
+    return fila[:max(LOOT_MAX_APERTADAS, 1)]
+
+
+def dentro_da_tela(offset):
+    """O quadrado cabe na area do jogo? Fora dela o cursor cai no painel."""
+    _vx, _vy, vw, vh = GAME_VIEW
+    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+    return (-meio_col <= offset[0] <= meio_col
+            and -meio_lin <= offset[1] <= meio_lin)
 
 
 def mira_mouse(x, y):
@@ -3235,7 +3325,7 @@ def show_loot():
     teclas = [LOOT_HOTKEY] + ([gemea] if gemea else [])
     for tecla in teclas:
         print(f"--- tecla {tecla!r}")
-        for quadrado in quadrados_do_saque((0, 0)):
+        for quadrado in quadrados_do_saque():
             x, y = ponto_do_quadrado(leitura, quadrado)
             if not teclado.isActive:
                 focus_window(teclado)
@@ -3440,17 +3530,6 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     if not ENABLE_LOOT or onde is None:
         return False
 
-    # o prazo e sobre CHEGAR no corpo, nao sobre varre-lo: varredura em
-    # andamento nao se interrompe pela metade, senao o corpo fica com metade do
-    # loot dentro
-    if (estado.get("loot_fila") is None
-            and time.time() - estado.get("loot_desde", 0) > LOOT_PRAZO):
-        print(f"[loot] {LOOT_PRAZO:.0f}s tentando chegar no corpo em {onde}; "
-              f"desisto e sigo a rota")
-        estado["loot_onde"] = None
-        estado["loot_fila"] = None
-        return False
-
     # o corpo nao anda: o que muda e a posicao do personagem, e o offset dele
     # acompanha o odometro
     if odo is not None and "loot_pos" in estado:
@@ -3463,6 +3542,21 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
 
     distancia = max(abs(onde[0]), abs(onde[1]))
     if distancia > LOOT_DIST:
+        # O PRAZO VALE AQUI, e so aqui: e o tempo de CHEGAR no corpo. Uma vez
+        # dentro do alcance, a varredura tem fila finita e drena sozinha, entao
+        # nao precisa de prazo e nao pode ser cortada pela metade - senao o
+        # corpo fica com metade do loot dentro.
+        #
+        # Este teste ficava antes da divisao e era pulado enquanto houvesse fila
+        # montada. Resultado: corpo que saia do alcance com a varredura
+        # comecada prendia o bot para sempre, porque loot() devolvendo True
+        # SEGURA A ROTA. Cacada morta sem uma linha de erro.
+        if time.time() - estado.get("loot_desde", 0) > LOOT_PRAZO:
+            print(f"[loot] {LOOT_PRAZO:.0f}s tentando chegar no corpo em "
+                  f"{onde}; desisto e sigo a rota")
+            estado["loot_onde"] = None
+            estado["loot_fila"] = None
+            return False
         # longe: anda ate o corpo. Clique no mapa, que desvia de parede, e um
         # por parada como no resto do projeto.
         if odo is not None and odo.parado < WALK_STOP_TICKS:
@@ -3489,11 +3583,10 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     # numa leitura so seguraria a cura por segundos.
     fila = estado.get("loot_fila")
     if fila is None:
-        fila = [q for q in quadrados_do_saque(onde)
-                for _ in range(LOOT_TENTATIVAS)]
+        fila = fila_do_saque()
         estado["loot_fila"] = fila
         print(f"[loot] corpo estimado em {onde[0]:.0f},{onde[1]:.0f}: varro "
-              f"{len(fila) // max(LOOT_TENTATIVAS, 1)} quadrado(s) com "
+              f"{len(set(fila))} quadrado(s) em {len(fila)} apertada(s) com "
               f"{LOOT_HOTKEY!r}"
               + (" e com o menos do numpad"
                  if LOOT_HOTKEY_NUMPAD and LOOT_HOTKEY in NUMPAD_DO_SINAL
@@ -3502,7 +3595,15 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     for _ in range(LOOT_POR_VEZ):
         if not fila:
             break
-        quadrado = fila.pop(0)
+        # a fila guarda DELTAS EM TORNO DO CORPO; o offset do personagem sai da
+        # posicao ATUAL do corpo. Guardar o offset pronto envelhecia: bastava o
+        # personagem andar um passo no meio da varredura para o resto dela
+        # mirar um quadrado ao lado.
+        delta = fila.pop(0)
+        quadrado = (int(round(onde[0])) + delta[0],
+                    int(round(onde[1])) + delta[1])
+        if not dentro_da_tela(quadrado):
+            continue            # fora da area do jogo o cursor cai no painel
         # MIRAR ANTES DE APERTAR: a tecla de saque rapido age sobre o que esta
         # debaixo do cursor. Sem isso ela saia com o mouse sobre o minimapa, do
         # ultimo clique de rota, e nao pegava nada.
@@ -3700,15 +3801,49 @@ def show_bars():
     print("\nEncerrado.")
 
 
+def salva_amostra_battle(leitura):
+    """Grava o recorte da battle list em testes/, para o testa_moribundo."""
+    try:
+        cx, cy, cw, ch = client_rect(leitura)
+        x0 = max(cw - BATTLE_PANEL_W, 0)
+        y0, y1 = BATTLE_SEARCH_Y[0], min(BATTLE_SEARCH_Y[1], ch)
+        if y1 - y0 < 20 or cw - x0 < 20:
+            return False
+        img = grab((cx + x0, cy + y0, cw - x0, y1 - y0))
+        pasta = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "testes")
+        os.makedirs(pasta, exist_ok=True)
+        destino = os.path.join(pasta, "battle_target.png")
+        mss.tools.to_png(np.ascontiguousarray(img[:, :, ::-1]).tobytes(),
+                         (img.shape[1], img.shape[0]), output=destino)
+        print(chr(10) + f"[battle] amostra com alvo engajado salva em {destino}"
+              + chr(10) + "         (e a que o testa_moribundo usa)")
+        return True
+    except Exception as erro:
+        print(chr(10) + f"[battle] nao consegui salvar a amostra: {erro}")
+        return True          # nao fica tentando a cada leitura
+
+
 def show_battle():
-    """Modo diagnostico: mostra o que o bot ve na Battle List, sem digitar nada."""
+    """
+    Modo diagnostico: mostra o que o bot ve na Battle List, sem digitar nada.
+
+    Grava tambem uma amostra em testes/battle_target.png assim que aparecer um
+    alvo engajado. E dessa amostra REAL que vive o testa_moribundo, que confere
+    se o bot continua enxergando o bicho com a barra quase zerada - e sem ela o
+    teste nao roda. A amostra e uma captura da sua tela, entao nao vai para o
+    repositorio: quem clona regera aqui.
+    """
     leitura, _ = setup_windows()
     if not leitura:
         return
 
     print(f"Lendo a Battle List de '{leitura.title}'. Ctrl+Alt+S para sair.")
+    guardou = False
     while not keyboard.is_pressed(KILL_KEY):
         entradas, atacando, alvo_hp, _, _ = battle_state(leitura)
+        if atacando and not guardou:
+            guardou = salva_amostra_battle(leitura)
         if entradas == 0:
             acao = "lista vazia, nao ataca"
         elif atacando:
@@ -4232,7 +4367,17 @@ if __name__ == "__main__":
                         help="Ensina por clique os quadrados de nao pisar.")
     parser.add_argument("--obs", action="store_true",
                         help="Ler do projetor do OBS em vez da janela do Tibia.")
+    parser.add_argument("--padroes", action="store_true",
+                        help="Ignora o config.json e usa os valores do codigo.")
     args = parser.parse_args()
+
+    # A SUA configuracao vale tambem pela linha de comando. So a GUI lia o
+    # config.json: rodando `python main.py --loot` o diagnostico conferia a
+    # tecla PADRAO em vez da que voce configurou, e respondia a pergunta errada.
+    if not args.padroes:
+        entraram = carrega_config()
+        if entraram:
+            print(f"[config] {entraram} ajuste(s) de {CONFIG_FILE}")
 
     OBS_MODE = OBS_MODE or args.obs
 

@@ -97,7 +97,19 @@ def clica(win, passo):
 
 main.detect_marks, main.click_minimap = visiveis, clica
 odo, estado, cd = Odo(), {}, main.Cooldown(0)
-nome = lambda p: next((n for n, m in MARCAS.items() if math.dist(m, p) <= 3), "?")
+def nome(p):
+    """
+    Qual bandeira e esta, pela MAIS PROXIMA.
+
+    Era um raio fixo de 3, e a chegada e registrada dentro do track_marks
+    enquanto a etiqueta so e lida um quadro depois - tempo de o empurrao da
+    briga tirar o personagem do raio. Dava "?" em cima de bandeira de ponta, e
+    o veredito concluia que a ponta nunca fora alcancada, reprovando varredura
+    completa. As bandeiras estao a 15 de distancia entre si, entao a mais
+    proxima nunca e ambigua; "?" agora significa longe de todas mesmo.
+    """
+    perto = min(MARCAS.items(), key=lambda nm: math.dist(nm[1], p))
+    return perto[0] if math.dist(perto[1], p) <= 7 else "?"
 
 visitas, antes, brigas = [], 0, 0
 lutando = 0
@@ -119,7 +131,7 @@ for quadro in range(9000):
         if lutando == 0 and random.random() < 0.5:
             # travada: o personagem andou muito sem o bot ler nada e o
             # casamento entre quadros nao fecha mais
-            mundo.empurrao(random.choice((-10, 10)))
+            mundo.empurrao(random.choice((-3, 3)))
     else:
         mundo.anda()
         main.follow_marks(None, odo, estado, cd)
@@ -134,10 +146,14 @@ print("\ncorredor em C:", " ".join(NOMES), "(ENT = entrada, no meio)")
 print("visitas:", " ".join(visitas))
 print(f"brigas no caminho: {brigas} | cliques em parede: {mundo.pedra}")
 
+# "?" e AMOSTRAGEM, nao decisao: e o quadro em que a chegada foi contada com o
+# personagem entre duas bandeiras. Contar isso como inversao reprovava varredura
+# perfeita - por isso os "?" saem antes de julgar o vaivem.
 pontas = [v for v in visitas if v in ("P1", "P8")]
-inverteu_fora_da_ponta = [visitas[i] for i in range(1, len(visitas) - 1)
-                          if visitas[i - 1] == visitas[i + 1]
-                          and visitas[i] not in ("P1", "P8")]
+nomeadas = [v for v in visitas if v != "?"]
+inverteu_fora_da_ponta = [nomeadas[i] for i in range(1, len(nomeadas) - 1)
+                          if nomeadas[i - 1] == nomeadas[i + 1]
+                          and nomeadas[i] not in ("P1", "P8")]
 print("pontas alcancadas:", set(pontas),
       "| inversoes fora da ponta:", inverteu_fora_da_ponta)
 print("VEREDITO:", "OK" if len(set(pontas)) == 2 and not inverteu_fora_da_ponta

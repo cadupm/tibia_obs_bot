@@ -16,7 +16,20 @@ import main
 
 SP = AQUI
 
-amostra = np.load(SP + "battle_target.png.npy")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import png as _png
+
+# A amostra e uma CAPTURA DA SUA TELA, entao nao vai para o repositorio - quem
+# clona nao a tem, e o teste estourava com FileNotFoundError, sujando a suite
+# com um erro que parecia defeito do bot. Agora ele PULA e diz como regerar.
+_ARQ = SP + "battle_target.png"
+if not os.path.exists(_ARQ):
+    print("PULADO: falta a amostra real da battle list.")
+    print(f"  esperada em: {_ARQ}")
+    print("  para gerar:  python main.py --battle  (com um bicho engajado)")
+    print("VEREDITO: PULADO - sem a amostra nao da para medir")
+    raise SystemExit(0)
+amostra = _png.le(_ARQ)
 altura, largura = amostra.shape[:2]
 
 

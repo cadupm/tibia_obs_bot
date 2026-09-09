@@ -100,10 +100,28 @@ caminho, é loot que não vale a caçada. O prazo vale para **chegar** no corpo,
 para varrê-lo: varredura em andamento não se corta pela metade, senão metade do
 loot fica dentro do corpo.
 
+A fila de saque é montada em **rodadas do anel inteiro**, não em blocos por
+quadrado, e tem teto (`LOOT_MAX_APERTADAS`, 24). Em blocos, o teto cortaria os
+últimos quadrados sem nenhuma tentativa — e o quadrado certo pode ser
+justamente um deles. Em rodadas, cortar no teto só tira repetição. O teto existe
+porque 9 quadrados × 3 apertadas × 2 teclas dava 54 ações em ~4 s, muito acima
+do que uma pessoa faz, e o servidor tem proteção contra enxurrada de ação.
+
+Os quadrados da fila são **deltas em torno do corpo**, resolvidos na hora de
+apertar. Guardar o offset pronto envelhecia: bastava o personagem andar um passo
+no meio da varredura para todo o resto dela mirar um quadrado ao lado —
+justamente o erro que a varredura existe para cobrir.
+
 Não pegou nada na caçada? `python main.py --loot` confere as três coisas que o
 log não separa — a tecla, a mira e a geometria da tela. Mate um bicho, fique
 colado no corpo e rode: ele varre os 9 quadrados com as duas teclas, dizendo em
 qual está mirando. O quadrado que abrir a bolsa é o certo.
+
+**Limitação conhecida:** com vários bichos na tela, o corpo marcado é o do mais
+perto na leitura em que a lista ainda o tinha — e com dois bichos igualmente
+colados, esse pode ser o sobrevivente. A varredura em volta cobre o caso comum
+(os dois lado a lado); separar de verdade exigiria seguir a identidade de cada
+criatura entre quadros, que o bot não faz.
 
 ### Como lutar: stand, chase ou kite
 
@@ -356,6 +374,26 @@ sai primeiro, que é a prioridade, e o resto da leitura continua.
 
 O código está comentado com o *porquê* de cada uma delas.
 
+- **Um teste que reprova a decisão certa não mede o bot, mede o próprio ruído.**
+  O cenário da caverna em C com brigas vinha reprovando: passava em 3 de 12
+  sementes, e várias "falhas" tinham a varredura completa e correta.
+  Instrumentando os cliques, **todos** eram perfeitos — destino certo, erro
+  zero. O culpado era o mundo simulado: o empurrão do bicho arrastava o
+  personagem uma mediana de meia bandeira por briga (6,9 unidades de arco, com
+  15 entre bandeiras), com briga nova a cada ~12 quadros enquanto andar uma
+  perna leva 8. Nenhum algoritmo vence um mundo que o move mais depressa do que
+  ele anda. Com empurrão físico: 20 de 20 sementes. E como afrouxar um teste é
+  suspeito por construção, existe o `testa_briga_dentes.py`: ele roda os mesmos
+  cenários com a regra de ouro **deliberadamente quebrada** e exige reprovação —
+  8 de 8. Teste que nunca reprova é teste que não existe.
+
+- **O `config.json` só valia dentro da GUI.** Nenhuma linha do `main.py` lia o
+  arquivo: rodando pela linha de comando o bot usava os valores padrão do
+  código. Isso envenenava justamente os modos de diagnóstico — `--loot` conferia
+  a tecla `-` mesmo com outra configurada, e `--teclas` media as diagonais
+  padrão. Diagnóstico que mede outra configuração que não a sua responde a
+  pergunta errada, e com toda a confiança.
+
 - **Tecla apertada com sucesso não é tecla que chegou.** O bot não pegava nenhum
   loot e o log não tinha um único sinal de erro: ele mirava certo e apertava
   certo, só que o `-` que ele mandava (`VK_OEM_MINUS`, a fileira de cima) não é
@@ -432,6 +470,19 @@ tela e o clique por um mundo de mentira, com brigas, empurrões, travadas e
 detecção falhando de propósito.
 
 ```
+python testes/roda_tudo.py             # a suíte inteira, com o estado sem enfeite
+python testes/roda_tudo.py loot        # só os que casam com "loot"
+```
+
+O runner existe porque ler a suíte a olho já deu errado duas vezes: um teste
+imprime **dois** vereditos (o `testa_grudado` roda outro cenário dentro de si) e
+um grep pelo primeiro `OK` escondia um `FALHOU` na mesma saída; outro imprime um
+traceback de propósito, para provar que o laço aguenta erro, e parecia quebrado.
+As regras são explícitas: qualquer `FALHOU` reprova o arquivo mesmo que outro
+verdito diga OK; `PULADO` é uma terceira categoria e **não** é sucesso; saída
+sem nenhum veredito conta como erro, não como sucesso silencioso.
+
+```
 python testes/testa_caverna_c.py       # caverna em ramo: varre um lado, volta, varre o outro
 python testes/testa_grampo.py          # dois braços colados com pedra no meio
 python testes/testa_rota_ordem.py      # rota gravada: segue a ordem, começando do meio
@@ -446,6 +497,8 @@ python testes/testa_teclas_config.py  # trocar as teclas das diagonais não derr
 python testes/testa_erro_no_laco.py   # erro isolado não mata a caçada
 python testes/testa_loot.py           # vai até o corpo, varre os quadrados, volta à rota
 python testes/testa_loot_no_laco.py   # o loot no laço inteiro: morreu -> marcou -> saqueou
+python testes/testa_config.py         # o config.json vale também fora da GUI
+python testes/testa_briga_dentes.py   # os cenários de rota reprovam um bot quebrado?
 python testes/testa_heal.py           # cura começando com vida baixa; emergência na frente
 python testes/testa_paralisia.py      # separa pedra de paralisia e conjura a cura
 python testes/testa_kite_no_laco.py   # kita no laço do bot, mesmo com o andar desligado
