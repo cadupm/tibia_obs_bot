@@ -4542,6 +4542,52 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     return True
 
 
+def foto_da_morte(img, quadrados):
+    """
+    Grava a area do jogo com a grade e o quadrado escolhido para cada corpo.
+
+    E o unico jeito honesto de conferir a escolha: se o corpo esta num quadrado
+    e o vermelho noutro, a foto mostra. Um arquivo so, `ultima_morte.png`,
+    reescrito a cada morte.
+
+    Nunca derruba o bot: uma foto que falhou nao vale uma cacada.
+    """
+    try:
+        vx, vy, vw, vh = GAME_VIEW
+        meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+        tela = np.ascontiguousarray(img.astype(np.uint8)).copy()
+        for c in range(vw // TILE_PX + 1):
+            tela[:, max(c * TILE_PX - 1, 0):c * TILE_PX + 1] = (0, 170, 0)
+        for l in range(vh // TILE_PX + 1):
+            tela[max(l * TILE_PX - 1, 0):l * TILE_PX + 1, :] = (0, 170, 0)
+
+        def moldura(dx, dy, cor, larg=3, encolhe=0):
+            x0 = (meio_col + dx) * TILE_PX + encolhe
+            y0 = (meio_lin + dy) * TILE_PX + encolhe
+            x1 = min(x0 + TILE_PX - 2 * encolhe, vw)
+            y1 = min(y0 + TILE_PX - 2 * encolhe, vh)
+            x0, y0 = max(x0, 0), max(y0, 0)
+            if x1 <= x0 or y1 <= y0:
+                return
+            tela[y0:y0 + larg, x0:x1] = cor
+            tela[y1 - larg:y1, x0:x1] = cor
+            tela[y0:y1, x0:x0 + larg] = cor
+            tela[y0:y1, x1 - larg:x1] = cor
+
+        moldura(0, 0, (0, 220, 255))                  # o personagem
+        for q in quadrados:
+            moldura(q[0], q[1], (255, 0, 0))          # o corpo escolhido
+            moldura(q[0], q[1], (255, 255, 0), 2, 26)  # o pixel do clique
+        arquivo = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "ultima_morte.png")
+        mss.tools.to_png(tela.tobytes(), (vw, vh), output=arquivo)
+        print(f"[loot] foto do instante da morte em {arquivo}: ciano e o "
+              f"personagem, vermelho o quadrado escolhido para o corpo")
+    except Exception as erro:                # foto nao derruba cacada
+        print(f"[loot] nao consegui gravar a foto da morte: "
+              f"{type(erro).__name__}: {erro}")
+
+
 def marca_o_corpo(estado, onde, odo=None, visto_em=None, na_tela=False):
     """
     Guarda onde o bicho morreu, para o loot ir buscar.
@@ -5242,6 +5288,7 @@ def run_bot():
                     del caminho["sumiram"][-len(usa):]
                     print(f"[loot] {mortos_agora} morte(s); a barra de vida "
                           f"sumiu em {quadrados}: e ali que os corpos estao")
+                    foto_da_morte(tela_agora, quadrados)
                     for quadrado_corpo in quadrados:
                         marca_o_corpo(caminho, quadrado_corpo, odo_agora,
                                       na_tela=True)
