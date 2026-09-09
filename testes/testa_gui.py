@@ -115,14 +115,31 @@ def roda(canvas, sobre, do_fim=False):
     return antes, canvas.yview()[0]
 
 print()
-combate = painel.telas[1][0]
-painel.notas.select(1)
-_raiz.update_idletasks()
-_raiz.update()
-antes, depois = roda(combate, combate)
-print(f"roda sobre area comum da Combate: {antes:.3f} -> {depois:.3f}")
-if depois == antes:
-    falhas.append("a roda do mouse nao rola a aba")
+# A ABA TEM DE TER PARA ONDE ROLAR, senao o teste mede falta de espaco e nao
+# defeito. Qual aba e a mais alta muda conforme o painel ganha e perde campos -
+# a Combate ja foi a maior e hoje tem tres linhas -, entao a escolha e por
+# medida, e nao por indice fixo.
+rolaveis = []
+for i, (canvas, dentro, _barra) in enumerate(painel.telas):
+    painel.notas.select(i)
+    _raiz.update_idletasks()
+    _raiz.update()
+    if dentro.winfo_reqheight() > canvas.winfo_height() + 4:
+        rolaveis.append(i)
+if not rolaveis:
+    print("nenhuma aba precisa rolar: o painel inteiro cabe na tela, e a roda "
+          "nao tem o que exercitar")
+else:
+    i = rolaveis[0]
+    painel.notas.select(i)
+    _raiz.update_idletasks()
+    _raiz.update()
+    canvas = painel.telas[i][0]
+    antes, depois = roda(canvas, canvas)
+    nome = painel.notas.tab(i, "text")
+    print(f"roda sobre area comum da {nome}: {antes:.3f} -> {depois:.3f}")
+    if depois == antes:
+        falhas.append(f"a roda do mouse nao rola a aba {nome}")
 
 for atributo, rotulo in (("lista_monstros", "lista de monstros"),
                          ("lista_rota", "arvore da rota")):

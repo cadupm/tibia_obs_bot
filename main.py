@@ -1327,6 +1327,87 @@ def formata(frac, maximo):
     return f"{frac:.0%}"
 
 
+_OCR = {"leitor": None, "quando": 0.0}
+
+
+def le_numeros_da_barra(img):
+    """
+    Le o "atual/maximo" que o cliente escreve dentro da barra.
+
+    Devolve (atual, maximo) ou (None, None). O texto tem 12 px de altura, entao
+    vai ampliado: no tamanho original o reconhecedor devolve digito embaralhado
+    ("13235123165/16580" para duas barras lado a lado), e a 3x sai limpo com
+    0,80 de confianca.
+
+    O reconhecedor e carregado na primeira chamada e fica guardado: a carga
+    custa segundos, a leitura custa decimos.
+    """
+    try:
+        import cv2
+        if _OCR["leitor"] is None:
+            from rapidocr_onnxruntime import RapidOCR
+            _OCR["leitor"] = RapidOCR()
+    except Exception as erro:
+        print(f"[bars] sem leitor de texto ({type(erro).__name__}): "
+              f"a vida e a mana maximas ficam pelo config")
+        return None, None
+    try:
+        bgr = cv2.cvtColor(np.ascontiguousarray(img.astype(np.uint8)),
+                           cv2.COLOR_RGB2BGR)
+        grande = cv2.resize(bgr, None, fx=3, fy=3,
+                            interpolation=cv2.INTER_NEAREST)
+        achado, _ = _OCR["leitor"](grande)
+    except Exception as erro:
+        print(f"[bars] leitura de texto falhou: {type(erro).__name__}: {erro}")
+        return None, None
+    for _caixa, texto, _conf in (achado or []):
+        limpo = "".join(c for c in str(texto) if c.isdigit() or c == "/")
+        if limpo.count("/") != 1:
+            continue
+        esquerda, direita = limpo.split("/")
+        if esquerda.isdigit() and direita.isdigit() and int(direita) > 0:
+            return int(esquerda), int(direita)
+    return None, None
+
+
+def le_maximos(win):
+    """
+    Vida e mana maximas, lidas das barras. Devolve quantas achou.
+
+    NAO SE PERGUNTA O QUE DA PARA LER. O numero esta escrito na tela, e o campo
+    digitado a mao envelhece a cada level - com 735 configurado e 235 de vida
+    real, "curar com vida <= 180" virava "curar com vida <= 57%", que e outra
+    ordem.
+    """
+    global HP_MAX, MANA_MAX
+    try:
+        hp, mana = ensure_bars(win)
+        if not hp or not mana:
+            return 0
+        cx, cy, _, _ = client_rect(win)
+    except Exception as erro:
+        # ler o maximo e conforto, nao requisito: sem ele valem os do config
+        print(f"[bars] nao consegui ler os maximos na tela "
+              f"({type(erro).__name__}); valem os do config")
+        return 0
+    achou = 0
+    for nome, caixa in (("HP_MAX", hp), ("MANA_MAX", mana)):
+        bx, by, bw, bh = caixa
+        _atual, maximo = le_numeros_da_barra(
+            grab((cx + bx, cy + by - 2, bw, bh + 4)))
+        if maximo is None:
+            continue
+        antes = globals()[nome]
+        globals()[nome] = maximo
+        achou += 1
+        if antes != maximo:
+            print(f"[bars] {nome} lido na tela: {maximo} (estava {antes})")
+    if achou < 2:
+        print(f"[bars] li {achou} de 2 maximos na tela; o resto fica pelo "
+              f"config (HP_MAX={HP_MAX}, MANA_MAX={MANA_MAX})")
+    return achou
+
+
 def read_bars(win):
     """Le HP e mana da janela como fracoes (0.0 a 1.0)."""
     regioes = ensure_bars(win)
@@ -5343,6 +5424,7 @@ def run_bot():
     # ao personagem. Uma cacada inteira clicando no quadrado vizinho do corpo
     # passou sem que nada no log dissesse por que.
     confere_a_grade(leitura)
+    le_maximos(leitura)          # o numero esta escrito na barra; nao se pede
     if ATTACK_MODE == "stand":
         print(f"[luta] modo stand: paro com {STOP_WALK_KEY} e nao saio do lugar")
     elif ATTACK_MODE == "chase":

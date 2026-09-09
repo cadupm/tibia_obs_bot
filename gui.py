@@ -44,10 +44,6 @@ PONTOS = "pontos (<=1 = fracao da barra)"
 # campo = (atributo no main, rotulo, tipo, dica)
 ABAS = [
     ("Healing", [
-        ("Personagem", None, [
-            ("HP_MAX", "Vida maxima", int, "atualize ao subir de level"),
-            ("MANA_MAX", "Mana maxima", int, ""),
-        ]),
         ("Cura", "ENABLE_HEAL", [
             ("HEAL_HOTKEY", "Hotkey da cura", str, "magia ou pocao"),
             ("HEAL_THRESHOLD", "Curar com vida <=", float, PONTOS),
@@ -65,29 +61,10 @@ ABAS = [
         ("Ataque", "ENABLE_ATTACK", [
             ("ATTACK_MODE", "Como lutar", str, "stand, chase ou kite"),
             ("ATTACK_HOTKEY", "Tecla de atacar", str, "atacar proxima criatura"),
-            ("ATTACK_COOLDOWN", "Cooldown", float, "segundos"),
-            ("ATTACK_CONFIRM", "Leituras sem alvo p/ trocar", int,
-             "evita trocar de bicho por leitura ruim"),
-            ("TARGET_LOST_MAX", "Segurar o alvo por", float,
-             "segundos; so troca quando ele sumir da battle list"),
-            ("TARGET_GONE_READS", "Leituras sem o bicho p/ dar por morto", int,
-             "uma leitura ruim nao conta como morte"),
         ]),
         ("Kite (so no modo kite)", None, [
             ("KITE_DIST", "Manter distancia de", int,
              "SQM de todo bicho na tela, inclusive o alvo"),
-            ("KITE_COOLDOWN", "Intervalo entre passos", float,
-             "segundos; a velocidade de andar do personagem"),
-            ("KITE_CLIQUE", "Clicar no mapa a partir de", int,
-             "SQM alem da distancia: seta e lenta para longe"),
-            ("KITE_BLOQUEIO", "Evitar lado que nao andou por", float,
-             "segundos; e assim que ele desencalha de parede"),
-            ("KITE_DIAGONAIS", "Usar diagonais", bool,
-             "confira com --teclas antes de ligar"),
-            ("KITE_DIAGONAIS_TECLAS", "Teclas das diagonais", str,
-             "cima-esq, cima-dir, baixo-esq, baixo-dir"),
-            ("PARAR_SE_MUDAR_ANDAR", "Parar se mudar de andar", bool,
-             "caiu em escada ou buraco: para tudo"),
         ]),
         ("Combo de magia", "ENABLE_SPELL", [
             ("SPELL_HOTKEY", "Magia do combo", str, "entra entre os turnos"),
@@ -122,52 +99,9 @@ ABAS = [
         ("Ir no corpo e clicar nele", "ENABLE_LOOT", [
             ("LOOT_CLICA", "Clicar no corpo", bool,
              "no cliente, o botao direito no corpo saqueia"),
-            ("LOOT_BOTAO", "Botao do clique", str,
-             "direito ou esquerdo"),
-            ("LOOT_MOD", "Segurar junto", str,
-             "shift, ctrl, alt ou vazio"),
-            ("LOOT_NA_HORA", "Saquear na hora o que esta colado", bool,
-             "sem esperar a briga: clicar ao lado nao e movimento"),
-            ("LOOT_ANTES_DE_ATACAR", "Saquear antes do proximo bicho", bool,
-             "mata um, lootea, ataca o proximo"),
-            ("LOOT_ANTES_HP_MIN", "...mas nao com vida abaixo de", float,
-             "fracao da vida: apanhando, revidar vem primeiro"),
-            ("LOOT_FECHA_MENU", "Fechar menu depois do clique", bool,
-             "menu de contexto aberto engole clique e tecla"),
-            ("LOOT_TECLA", "Tecla de saque, no corpo", str,
-             "reforco: uma apertada no mesmo ponto; vazio = so o clique"),
-            ("LOOT_TECLA_DIST", "Tecla so ate", int,
-             "SQM: o saque exige estar ao lado ou em cima"),
-            ("LOOT_TECLA_NUMPAD", "Mandar tambem o numpad", bool,
-             "o - de cima e o - do numpad sao teclas diferentes"),
-            ("LOOT_DIST", "Chegar a", int,
-             "SQM do corpo antes de clicar"),
-            ("LOOT_MAX_CORPOS", "Corpos na fila", int,
-             "numa caverna se mata em grupo"),
-            ("LOOT_PRAZO", "Esperar o personagem chegar no corpo", float,
-             "segundos depois do clique; passou disso, segue"),
-            ("LOOT_VALIDADE", "Largar corpo mais velho que", float,
-             "segundos: o de tras na rota nao vale a viagem"),
-        ]),
-        ("Onde o bicho esta na tela", None, [
-            ("CREATURE_BAR_ABOVE", "Criatura abaixo da barra", int,
-             "quadrados; meca com --kite, que calibra sozinho"),
-        ]),
-        ("Achar o corpo na tela", "LOOT_ACHA_CORPO", [
-            ("LOOT_SO_SE_ACHOU", "Largar se nao achar", bool,
-             "desligado: clica no palpite, que e melhor que nao agir"),
-            ("LOOT_DIFF_MIN", "Mudanca minima do quadrado", float,
-             "por pixel; o log de cada morte diz o valor real"),
-            ("LOOT_DIFF_MARGEM", "Vantagem sobre o segundo", float,
-             "vezes; sem isso animacao de chao ganharia por pouco"),
-            ("LOOT_BUSCA_RAIO", "Procurar num raio de", int,
-             "SQM em volta do palpite (1 = os 9 quadrados)"),
         ]),
     ]),
     ("Autocast", [
-        ("Autocast", "ENABLE_AUTOCAST", [
-            ("AUTOCAST_MANA_FLOOR", "Nao conjurar abaixo de", float, PONTOS),
-        ]),
         # Aqui e nao no Combate: e magia que o bot conjura sozinho, como o
         # resto desta aba. O gatilho e que difere - as de baixo saem por tempo,
         # esta sai quando TODO lado parece parede, que e o que a paralisia faz
@@ -1065,12 +999,33 @@ class Painel:
                 self.escreve_log(f"[gui] config carregada de {CONFIG_FILE}")
             except (OSError, ValueError) as erro:
                 self.escreve_log(f"[gui] config invalida ({erro}); usando o main.py")
+        # O ARQUIVO INTEIRO VAI PARA O MAIN, e nao so o que esta na tela. A
+        # GUI aplicava apenas os campos que mostrava, entao campo escondido
+        # rodaria com o padrao do codigo mesmo estando salvo - e esconder campo
+        # e exatamente o que este painel passou a fazer.
+        main.carrega_config(CONFIG_FILE)
         self.preencher(cfg)
         self.aplicar()
 
     def salvar(self):
+        """
+        Grava o que a tela controla, PRESERVANDO o que ela nao mostra.
+
+        Gravava so os campos da tela por cima do arquivo inteiro. Enquanto a
+        tela tinha tudo, dava na mesma; bastou esconder campo para o valor dele
+        sumir do arquivo no primeiro Salvar e o bot voltar ao padrao do codigo,
+        sem uma linha dizendo isso. Config que some em silencio ja custou caro
+        aqui.
+        """
         self.aplicar()
-        dados = self.coletar()
+        dados = {}
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, encoding="utf-8") as f:
+                    dados = json.load(f)
+            except (OSError, ValueError):
+                dados = {}
+        dados.update(self.coletar())
         dados["AUTOCAST"] = self.coletar_autocast()
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(dados, f, indent=2, ensure_ascii=False)
