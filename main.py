@@ -577,16 +577,19 @@ KITE_DIAGONAIS = False          # As diagonais do teclado numerico NAO moveram o
 #   sempre no meio da tela, entao andar um quadrado desloca o mundo por um
 #   quadrado; o passo de volta fechou em 0 px de diferenca.
 #
-#   ORIGEM: a MOLDURA VERMELHA do bicho atacado. Ela e o unico desenho da tela
-#   que o cliente alinha ao quadrado, entao ela DEFINE a grade. Medida num
-#   quadro real: RGB (190,62,62), 4 px de espessura, 64 px de lado, canto em
-#   (484,173) da area de cliente. Logo as bordas ficam em x = 484 mod 64 e
-#   y = 173 mod 64, o que poe a origem em (228,45) - e com ela o personagem
-#   cai exatamente na coluna 7, linha 5, como tem de ser.
+#   ORIGEM: duas medidas independentes que batem. A area com textura vai de
+#   (250,61) a (1209,764) - 960x704, que e 15x11 de 64. E a periodicidade da
+#   propria textura do chao: somando a borda vertical de cada coluna por fase,
+#   a fase campea e x = 249 + 64k, e a horizontal y = 60 + 64k. Ou seja, as
+#   bordas de quadrado caem ali.
 #
-# A origem ja esteve em (250,61), estimada pela textura da tela: 22 px e 16 px
-# fora, um terco de quadrado. Estimar pela textura depende do que esta desenhado
-# na hora - um trecho liso na beirada e a medida anda.
+# A origem ja esteve em (228,45) por UMA amostra da moldura vermelha do alvo.
+# A moldura e alinhada ao quadrado, sim - MAS SO COM O PERSONAGEM PARADO:
+# enquanto ele anda, o cliente rola o cenario em fracao de quadrado, e aquele
+# quadro foi tirado no meio de um passo, 22 px adiantado. Uma amostra so nao
+# distingue "a grade e assim" de "esta captura pegou o mundo no meio do
+# movimento" - foi preciso amostrar ao longo do tempo para ver que a barra do
+# personagem parado fica sempre no mesmo pixel (699) e a moldura, nao.
 #
 # Ja esteve (221, 61, 1020, 748) com 68 px, estimado pela textura da tela, e o
 # estrago era proporcional a distancia: 4 px de erro por quadrado. Ao lado do
@@ -595,7 +598,7 @@ KITE_DIAGONAIS = False          # As diagonais do teclado numerico NAO moveram o
 # nao looteia, as vezes erra o clique e looteia outro".
 #
 # Confira no seu layout com "python main.py --grade", que mede os dois.
-GAME_VIEW = (228, 45, 15 * 64, 11 * 64)
+GAME_VIEW = (250, 61, 15 * 64, 11 * 64)
 TILE_PX = 64                    # px por SQM na tela do jogo
 # A barrinha de vida sobre a criatura, medida na captura da cave: moldura de
 # preto puro com 31 px de largura e 4 de altura, com 2 linhas de preenchimento
@@ -3564,8 +3567,25 @@ def calibra_a_barra():
     global CREATURE_BAR_ABOVE
     desvio = desvio_da_barra()
     if desvio is None:
+        # NENHUMA BARRA NA COLUNA DO PERSONAGEM. Se ha barra de 31 px na tela e
+        # nenhuma cai na coluna do meio, quem esta fora do lugar e a COLUNA: a
+        # origem horizontal de GAME_VIEW esta errada, e ai todo quadrado sai
+        # deslocado. Isto ja aconteceu - a origem foi mudada com base numa
+        # unica captura da moldura do alvo, tirada no meio de um passo - e o
+        # unico sintoma era o bot errar o quadrado do corpo.
         _CALIBRA["seguidas"] = 0
+        _CALIBRA["sem_coluna"] = _CALIBRA.get("sem_coluna", 0) + (
+            1 if _BARRAS_CRUAS else 0)
+        if (_CALIBRA["sem_coluna"] == 40
+                and not _CALIBRA.get("avisou_coluna")):
+            _CALIBRA["avisou_coluna"] = True
+            print(f"[calibra] ha barras de vida na tela e NENHUMA na coluna do "
+                  f"personagem em 40 leituras. Ele esta sempre no quadrado do "
+                  f"meio, entao a barra dele tem de cair ali: a origem "
+                  f"horizontal de GAME_VIEW={GAME_VIEW} esta errada e todo "
+                  f"quadrado sai deslocado. Meca com 'python main.py --grade'.")
         return
+    _CALIBRA["sem_coluna"] = 0
     if desvio == _CALIBRA["desvio"]:
         _CALIBRA["seguidas"] += 1
     else:

@@ -3,10 +3,10 @@
   "MANA_MAX": 915,
   "ENABLE_HEAL": true,
   "HEAL_HOTKEY": "f2",
-  "HEAL_THRESHOLD": 180.0,
+  "HEAL_THRESHOLD": 680.0,
   "HEAL_COOLDOWN": 1.0,
   "HEAL_STRONG_HOTKEY": "f5",
-  "HEAL_STRONG_THRESHOLD": 120.0,
+  "HEAL_STRONG_THRESHOLD": 520.0,
   "ENABLE_MANA": true,
   "MANA_HOTKEY": "f3",
   "MANA_THRESHOLD": 200.0,
@@ -33,7 +33,7 @@
   "ONLY_KNOWN_MONSTERS": true,
   "AUTO_LEARN": false,
   "LOOT_SO_MARCADOS": true,
-  "ENABLE_WALK": false,
+  "ENABLE_WALK": true,
   "MARK_COLOR": "azul",
   "MARK_ARRIVE": 3,
   "STOP_WALK_KEY": "esc",
@@ -98,5 +98,6 @@
       "tecla": "f10",
       "intervalo": 300.0
     }
-  ]
+  ],
+  "LOOP_DELAY_LUTA": 0.02
 }
