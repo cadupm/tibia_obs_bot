@@ -189,7 +189,10 @@ ABAS = [
         ]),
         ("Geral", None, [
             ("KILL_KEY", "Tecla de parada", str, "funciona mesmo sem foco"),
-            ("LOOP_DELAY", "Intervalo do loop", float, "segundos"),
+            ("LOOP_DELAY", "Intervalo do loop fora da briga", float,
+             "segundos: sem bicho na lista nao ha pressa"),
+            ("LOOP_DELAY_LUTA", "Intervalo do loop NA briga", float,
+             "segundos: bicho anda, e a posicao dele envelhece rapido"),
         ]),
     ]),
 ]

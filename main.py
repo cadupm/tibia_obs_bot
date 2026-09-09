@@ -685,7 +685,18 @@ ERROS_SEGUIDOS_MAX = 5          # leituras seguidas com erro antes de parar de
                                 # vez. Uma leitura ruim nao pode matar a
                                 # cacada; cinco em sequencia significam que algo
                                 # mudou de verdade.
-LOOP_DELAY = 0.15          # intervalo do while True
+LOOP_DELAY = 0.15          # intervalo do while True, FORA da briga
+LOOP_DELAY_LUTA = 0.02     # intervalo NA briga, com bicho na lista.
+                           # MEDIDO no cliente do usuario: uma leitura inteira
+                           # (captura + deteccao + battle list) custa 22 ms, e
+                           # com LOOP_DELAY de 0,15 o bot fazia 5,8 leituras
+                           # por segundo - 87% do tempo dormindo. A 5,8/s um
+                           # bicho andando anda quase MEIO QUADRADO entre uma
+                           # leitura e outra, e a ultima posicao vista dele -
+                           # que e a que vira ponto de clique quando ele morre
+                           # - ja nasce velha. A 25/s ela erra 5% de quadrado.
+                           # Fora da briga nao ha nada com essa pressa, e ai
+                           # vale economizar processador.
 STOP = False               # parada por codigo (alem do KILL_KEY)
 KILL_KEY = "ctrl+alt+s"    # F12 nao serve: no jogo F12 e a pa
 MIN_SAT = 30               # saturacao minima para considerar pixel "preenchido"
@@ -5826,7 +5837,10 @@ def run_bot():
                 # o cancelamento do trajeto ja aconteceu la em cima, antes do
                 # ataque: a tecla de parada solta o alvo junto e nao pode vir depois
 
-            time.sleep(LOOP_DELAY)
+            # RITMO: rapido na briga, economico fora dela. O que exige
+            # pressa e acompanhar bicho que anda; com a lista vazia, o bot
+            # so segue rota, e uma leitura a cada 150 ms sobra.
+            time.sleep(LOOP_DELAY_LUTA if entradas else LOOP_DELAY)
         except Exception as erro:
             seguidos += 1
             print(f'[erro] {type(erro).__name__}: {erro} (leitura {seguidos} de {ERROS_SEGUIDOS_MAX})')
