@@ -16,7 +16,7 @@ O que se mede aqui:
   - acha mesmo com o personagem tendo ANDADO entre os dois quadros (o viewport
     acompanha o personagem, entao o mesmo lugar do mundo aparece deslocado);
   - com chao animado em tudo, ou com dois quadrados mudando igual, ele DIZ que
-    nao sabe em vez de chutar - e ai vale o palpite com a varredura;
+    nao sabe em vez de chutar - e ai o bot larga o corpo;
   - o quadrado do proprio personagem nao e escolhido a esmo.
 """
 import os
@@ -47,7 +47,7 @@ def poe(img, offset, cor, tamanho=44):
 falhas = []
 print(f"limiar de mudanca: {main.LOOT_DIFF_MIN} por pixel | margem sobre o "
       f"segundo: {main.LOOT_DIFF_MARGEM}x")
-print(f"anel de busca: {len(main.quadrados_do_saque())} quadrados\n")
+print(f"anel de busca: {len(main.anel_de_busca())} quadrados\n")
 
 # --------------------------------- 1) o basico: bicho em (2,0), morre ali
 BASE = chao()
@@ -91,7 +91,8 @@ print(f"\nchao mudando em tudo (agua/fogo): achou {achou} "
       f"(maior {nota:.0f}, segundo {segundo:.0f})")
 if achou is not None:
     falhas.append(f"com tudo mudando ele chutou {achou}. Tem de dizer que nao "
-                  f"sabe e deixar o palpite da odometria com a varredura")
+                  f"sabe, e ai o bot larga o corpo em vez de clicar no que "
+                  f"nao e corpo")
 
 # --------------- 5) dois quadrados mudando igual: tambem nao sabe
 empate_a = poe(poe(BASE.copy(), (2, 0), (170, 40, 40)), (0, 2), (170, 40, 40))
@@ -116,23 +117,19 @@ if achou is not None:
     falhas.append("desligado e mesmo assim opinou")
 main.LOOT_ACHA_CORPO = True
 
-# --------------- 7b) desligar a VARREDURA nao pode encolher a BUSCA
-# Sao dois aneis com o mesmo desenho e razoes opostas: a varredura de tecla e
-# chutar em volta, e a busca na tela e medir. Compartilhando a mesma funcao,
-# desligar a varredura fazia o bot procurar o corpo num quadrado so - o do
-# palpite, que a busca existe justamente para corrigir.
-guardado = main.LOOT_VARRE
-main.LOOT_VARRE = False
-busca_sem, varre_sem = len(main.anel_de_busca()), len(main.quadrados_do_saque())
-main.LOOT_VARRE = True
-busca_com = len(main.anel_de_busca())
-main.LOOT_VARRE = guardado
-print(f"\ncom a varredura desligada: busca em {busca_sem} quadrado(s), "
-      f"varredura em {varre_sem}")
-if busca_sem != busca_com or busca_sem < 9:
-    falhas.append(f"desligar a varredura encolheu a busca para {busca_sem} "
-                  f"quadrado(s): o bot passaria a procurar o corpo so no "
-                  f"quadrado do palpite, que e o erro que a busca corrige")
+# --------------- 7b) o anel de busca nao depende de nada que foi removido
+# Ele ja compartilhou funcao com a varredura de tecla, e desligar a varredura
+# encolhia a busca para um quadrado so - o do palpite, justamente o erro que a
+# busca existe para corrigir. A varredura saiu do codigo; a busca continua.
+anel = main.anel_de_busca()
+print(f"\nanel de busca: {len(anel)} quadrado(s), raio "
+      f"{main.LOOT_BUSCA_RAIO}")
+if len(anel) != (2 * main.LOOT_BUSCA_RAIO + 1) ** 2:
+    falhas.append(f"o anel de busca tem {len(anel)} quadrados para raio "
+                  f"{main.LOOT_BUSCA_RAIO}")
+if anel[0] != (0, 0):
+    falhas.append(f"a busca comeca em {anel[0]}, e nao no palpite (0,0): o "
+                  f"quadrado mais provavel tem de ser o primeiro")
 
 # --------------- 8) quanto o corpo muda, de fato: o numero que calibra
 print(f"\npara calibrar LOOT_DIFF_MIN (hoje {main.LOOT_DIFF_MIN}):")

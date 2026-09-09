@@ -14,7 +14,7 @@ import main
 
 falhas = []
 guardado = {k: getattr(main, k) for k in
-            ("LOOT_HOTKEY", "LOOT_DIST", "KITE_DIST", "ENABLE_LOOT",
+            ("LOOT_BOTAO", "LOOT_DIST", "KITE_DIST", "ENABLE_LOOT",
              "ATTACK_MODE", "KITE_DIAGONAIS_TECLAS")}
 
 
@@ -27,19 +27,19 @@ def com_config(cfg):
 
 
 # ------------------------------------- 1) os tipos certos, e nao texto cru
-entraram = com_config({"LOOT_HOTKEY": "f9", "LOOT_DIST": "2",
+entraram = com_config({"LOOT_BOTAO": "direito", "LOOT_DIST": "2",
                        "KITE_DIST": "5.0", "ENABLE_LOOT": 0,
                        "ATTACK_MODE": "kite"})
 print(f"{entraram} chave(s) aplicadas")
-print(f"  LOOT_HOTKEY = {main.LOOT_HOTKEY!r}")
+print(f"  LOOT_BOTAO = {main.LOOT_BOTAO!r}")
 print(f"  LOOT_DIST   = {main.LOOT_DIST!r}  (veio como texto '2')")
 print(f"  KITE_DIST   = {main.KITE_DIST!r}  (veio como texto '5.0')")
 if main.KITE_DIST != 5:
     falhas.append(f"KITE_DIST virou {main.KITE_DIST!r}: '5.0' e cinco, e a GUI "
                   f"pode gravar assim")
 print(f"  ENABLE_LOOT = {main.ENABLE_LOOT!r} (veio como 0)")
-if main.LOOT_HOTKEY != "f9":
-    falhas.append("nao aplicou LOOT_HOTKEY")
+if main.LOOT_BOTAO != "direito":
+    falhas.append("nao aplicou LOOT_BOTAO")
 if main.LOOT_DIST != 2 or not isinstance(main.LOOT_DIST, int):
     falhas.append(f"LOOT_DIST virou {main.LOOT_DIST!r}: numero escrito como "
                   f"texto tem de virar numero, senao a comparacao de distancia "
@@ -51,20 +51,20 @@ if main.ENABLE_LOOT is not False:
 com_config({"COISA_QUE_NAO_EXISTE": 1, "loot_hotkey": "x"})
 print(f"\nchave desconhecida virou atributo? "
       f"{hasattr(main, 'COISA_QUE_NAO_EXISTE')}")
-print(f"chave minuscula foi aplicada? {main.LOOT_HOTKEY == 'x'}")
+print(f"chave minuscula foi aplicada? {main.LOOT_BOTAO == 'x'}")
 if hasattr(main, "COISA_QUE_NAO_EXISTE"):
     falhas.append("chave estranha do arquivo virou constante do modulo")
-if main.LOOT_HOTKEY == "x":
+if main.LOOT_BOTAO == "x":
     falhas.append("chave minuscula foi aplicada: so MAIUSCULA e constante")
 
 # --------------------------- 3) valor impossivel nao derruba o arranque
 antes = main.LOOT_DIST
-entraram = com_config({"LOOT_DIST": "duas casas", "LOOT_HOTKEY": "f5"})
+entraram = com_config({"LOOT_DIST": "duas casas", "LOOT_BOTAO": "esquerdo"})
 print(f"\ncom LOOT_DIST='duas casas': LOOT_DIST segue {main.LOOT_DIST!r}, "
-      f"e LOOT_HOTKEY ainda foi aplicada? {main.LOOT_HOTKEY == 'f5'}")
+      f"e LOOT_BOTAO ainda foi aplicada? {main.LOOT_BOTAO == "esquerdo"}")
 if main.LOOT_DIST != antes:
     falhas.append("valor impossivel corrompeu a constante")
-if main.LOOT_HOTKEY != "f5":
+if main.LOOT_BOTAO != "esquerdo":
     falhas.append("uma chave ruim impediu as outras de entrar")
 
 # --------------------------- 4) arquivo que nao existe: segue com os padroes

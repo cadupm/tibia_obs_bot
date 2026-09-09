@@ -7,14 +7,14 @@ cliente - sabendo que clicou nele, esta feito, e nao ha o que conferir depois.
 
 O caminho ate aqui foi errando:
 
-  - a tecla de saque sozinha depende de estar configurada no cliente, e o '-' de
-    cima nao e o '-' do numpad. Ela virou opcao (LOOT_USA_TECLA), nao o gesto;
   - a posicao do corpo vinha de odometria e errava por 1 SQM, e para cobrir isso
-    o bot varria os nove quadrados em volta. Varrer e chutar: clique de botao
-    direito em chao vazio abre menu de contexto e nao saqueia nada;
+    o bot VARRIA os nove quadrados em volta, com a tecla, o cursor pulando de um
+    para outro. Varrer e chutar: clique ou tecla em quadrado sem corpo nao
+    saqueia nada, e clique direito em chao vazio ainda abre menu de contexto;
   - agora o quadrado e IDENTIFICADO na tela (ver testa_acha_corpo.py) e, nao
     dando para identificar, o bot LARGA o corpo em vez de clicar no que nao e
-    corpo.
+    corpo. A tecla de saque ficou: UMA apertada, no proprio quadrado do corpo,
+    com o cursor ja em cima dele por causa do clique. Nao passeia.
 
 E o corpo nao tem barra de vida: a posicao e guardada em coordenada ABSOLUTA do
 odometro, nao em offset. Offset guardado envelhece a cada passo, e corrigi-lo
@@ -65,7 +65,6 @@ def clica_mapa(_win, passo):
 mirado = []
 main.click_minimap = clica_mapa
 main.client_rect = lambda win: (0, 0, 1920, 1009)
-main.mira_mouse = lambda x, y: mirado.append((x, y))
 main.click_game = lambda x, y, pausa=0.09, botao="esquerdo", mod="": \
     acoes.append(("clique", botao, mod, (x, y)))
 main.focus_window = lambda win: True
@@ -105,11 +104,13 @@ falhas = []
 print(f"gesto: {main.LOOT_CLIQUES} clique(s) com o botao {main.LOOT_BOTAO}"
       + (f" + {main.LOOT_MOD}" if main.LOOT_MOD else "")
       + f", a {main.LOOT_DIST} SQM do corpo")
-print(f"tecla de saque como reforco: "
-      f"{'ligada' if main.LOOT_USA_TECLA else 'DESLIGADA'} | "
-      f"varredura do anel: {'ligada' if main.LOOT_VARRE else 'DESLIGADA'}")
-print(f"so saqueia se identificou na tela: {main.LOOT_SO_SE_ACHOU} | "
-      f"fila de corpos: ate {main.LOOT_MAX_CORPOS}\n")
+print(f"tecla de saque: {main.LOOT_TECLA!r}"
+      + (f" + {main.NUMPAD_DO_SINAL[main.LOOT_TECLA]!r} (numpad)"
+         if main.LOOT_TECLA_NUMPAD and main.LOOT_TECLA in main.NUMPAD_DO_SINAL
+         else "") + f", uma vez, no quadrado do corpo")
+print(f"so saqueia se identificou na tela: {main.LOOT_SO_SE_ACHOU}")
+print(f"fila de corpos: ate {main.LOOT_MAX_CORPOS} | busca num raio de "
+      f"{main.LOOT_BUSCA_RAIO} SQM ({len(main.anel_de_busca())} quadrados)\n")
 
 # ------------------------------------------- 1) IGUAL NOS TRES MODOS
 # O que muda entre stand, chase e kite e a distancia de onde se parte. O gesto
@@ -143,19 +144,21 @@ main.marca_o_corpo(estado, (1, 0), odo, na_tela=True)
 saqueia_ate_o_fim(estado)
 pontos = {c[3] for c in cliques()}
 print(f"\num corpo: {len(cliques())} clique(s) em {len(pontos)} ponto(s) "
-      f"{sorted(pontos)}, {len(teclas_de_saque())} tecla(s) de saque, "
-      f"{len(mirado)} mirada(s) de cursor")
+      f"{sorted(pontos)}, teclas {teclas_de_saque()}")
 if len(pontos) != 1:
     falhas.append(f"clicou em {len(pontos)} pontos diferentes: o pedido e "
                   f"clique NO CORPO, nao em volta dele")
 if len(cliques()) != main.LOOT_CLIQUES:
     falhas.append(f"{len(cliques())} clique(s), esperava {main.LOOT_CLIQUES}")
-if teclas_de_saque():
-    falhas.append(f"mandou {teclas_de_saque()} com LOOT_USA_TECLA desligado: "
-                  f"o clique com o direito ja saqueia")
-if mirado:
-    falhas.append(f"mirou o cursor em {len(mirado)} ponto(s) sem precisar: a "
-                  f"mira e da tecla, que esta desligada")
+esperadas = ([main.LOOT_TECLA]
+             + ([main.NUMPAD_DO_SINAL[main.LOOT_TECLA]]
+                if main.LOOT_TECLA_NUMPAD
+                and main.LOOT_TECLA in main.NUMPAD_DO_SINAL else [])
+             ) if main.LOOT_TECLA else []
+if teclas_de_saque() != esperadas:
+    falhas.append(f"mandou {teclas_de_saque()}, esperava {esperadas}: uma "
+                  f"apertada no corpo, e nao uma varredura")
+
 
 # --------------------- 3) o clique cai no quadrado do corpo, botao certo
 if cliques():
@@ -267,27 +270,19 @@ if cliques():
                   f"cai no painel lateral")
 main.LOOT_DIST = 1
 
-# ------------------ 11) a tecla, quando LIGADA de proposito, ainda funciona
-main.LOOT_USA_TECLA = True
-estado = zera()
-main.marca_o_corpo(estado, (1, 0), odo, na_tela=True)
-acoes.clear()
-mirado.clear()
-saqueia_ate_o_fim(estado)
-mandadas = set(teclas_de_saque())
-print(f"\ncom LOOT_USA_TECLA ligado: teclas {sorted(mandadas)}, "
-      f"{len(mirado)} mirada(s)")
-if main.LOOT_HOTKEY not in mandadas:
-    falhas.append(f"com a tecla ligada, nao mandou {main.LOOT_HOTKEY!r}")
-gemea = main.NUMPAD_DO_SINAL.get(main.LOOT_HOTKEY)
-if main.LOOT_HOTKEY_NUMPAD and gemea and gemea not in mandadas:
-    falhas.append(f"nao mandou {gemea!r}: com a hotkey do cliente no menos do "
-                  f"numpad (VK_SUBTRACT), o '-' de cima (VK_OEM_MINUS) nao "
-                  f"chega la")
-if not mirado:
-    falhas.append("apertou a tecla sem mirar o cursor no corpo: ela age sobre "
-                  "o que esta debaixo dele")
-main.LOOT_USA_TECLA = False
+# ------------------ 11) a VARREDURA nao existe mais no codigo
+# A tecla ficou - uma apertada, no proprio quadrado do corpo. O que saiu foi
+# varrer: a tecla em nove quadrados com o cursor pulando de um para outro, para
+# cobrir um palpite que podia estar errado. O quadrado agora e identificado na
+# tela, e o cursor ja esta em cima dele por causa do clique.
+sobrou = [n for n in ("LOOT_USA_TECLA", "LOOT_VARRE", "LOOT_TENTATIVAS",
+                      "LOOT_MAX_APERTADAS", "LOOT_POR_VEZ", "fila_do_saque",
+                      "quadrados_do_saque", "mira_mouse")
+          if hasattr(main, n)]
+print(f"\nrestos da varredura de tecla: {sobrou or 'nenhum'}")
+if sobrou:
+    falhas.append(f"a varredura de tecla deixou restos: {sobrou}. Codigo "
+                  f"desligado mas presente volta a ser ligado por acidente")
 
 # ------------------------------------------ 12) desligado nao faz nada
 main.ENABLE_LOOT = False

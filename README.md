@@ -62,65 +62,57 @@ de luta muda de onde se parte, não o que se faz com o corpo.
 O gesto cabe numa frase: **chegar no corpo e clicar nele com o botão direito.**
 No Tibia o direito sobre um corpo saqueia — sabendo que clicou nele, está feito,
 e não há o que conferir depois. O esquerdo só manda o personagem andar para lá.
+Um clique, um ponto, e o corpo sai da fila.
 
-A tecla de saque (`LOOT_USA_TECLA`) fica **desligada** por padrão. Ela vinha
-depois do clique mirando o cursor em nove pontos: trabalho para confirmar o que
-já estava confirmado. Continua disponível como reforço para quem quiser.
+Depois do clique sai **uma** apertada da tecla de saque (`LOOT_TECLA`, padrão
+`-`), no mesmo ponto: o cursor já está sobre o corpo por causa do clique. Vazio
+desliga. E ela manda também a gêmea do numpad (`LOOT_TECLA_NUMPAD`), porque o `-`
+de cima não é o `-` do numpad — `VK_OEM_MINUS` contra `VK_SUBTRACT`. O bot
+apertava uma enquanto a hotkey do cliente estava na outra, e o log não acusava,
+porque do lado dele a tecla saía com sucesso.
 
-**Não sabendo onde o corpo caiu, o bot larga o corpo** (`LOOT_SO_SE_ACHOU`).
-Clicar em volta esperando acertar não é saquear — clique de botão direito em
-chão vazio abre menu de contexto e não pega nada. Medido: 1 clique em 1 ponto
-por corpo, contra 1 clique mais 24 apertadas espalhadas em 9 pontos.
+**O que foi removido é a varredura**, não a tecla. Ela apertava em nove
+quadrados, com o cursor pulando de um para outro, para cobrir o erro de 1 SQM do
+palpite de odometria. Varrer é chutar: clique ou tecla em quadrado sem corpo não
+saqueia nada, e clique direito em chão vazio ainda abre menu de contexto.
 
-**O corpo é procurado NA TELA, não estimado.** A posição vinda da odometria erra
-por 1 SQM com facilidade, e cobrir esse erro varrendo o anel em volta é
-tentativa e erro. Existe um sinal direto: o quadrado onde o bicho estava **muda**
-quando ele morre (sprite de bicho → sprite de corpo), e o quadrado vizinho que
-nunca teve bicho continua igual. Quem mudou é onde caiu.
+O que substituiu a varredura: **o corpo é identificado na tela.** O quadrado onde o
+bicho estava **muda** quando ele morre (sprite de bicho → sprite de corpo), e o
+quadrado vizinho que nunca teve bicho continua igual. Quem mudou é onde caiu.
 
-Não é reconhecimento de sprite de corpo — isso mudaria de espécie para espécie e
-precisaria de uma tabela por bicho, com um passo de aprendizado. É "este quadrado
-ficou diferente", que vale para qualquer bicho, inclusive um que o bot nunca viu.
-O quadro da última leitura com o bicho vivo é guardado junto com a posição, e a
-comparação alinha os dois quadros pelo tanto que o personagem andou — o viewport
-acompanha o personagem, então o mesmo lugar do mundo aparece deslocado.
-
-Medido em cenário sintético: corpo aparecendo muda **16,7** por pixel, chão
-parado **0,0**, chão inteiro trocado (o pior caso de água/fogo) **10,1**. Daí
-`LOOT_DIFF_MIN = 12`. Há uma segunda defesa, `LOOT_DIFF_MARGEM`: o vencedor tem
-de mudar 1,5× mais que o segundo colocado, senão o bot **diz que não sabe** e cai
-no palpite com a varredura. Dois bichos morrendo em quadrados diferentes, ou tudo
-mudando ao mesmo tempo, dão empate e não viram chute.
-
-Os números reais aparecem no log de cada morte (`mudou N por pixel, segundo M`)
-— é por eles que se calibra o limiar na sua caverna, já que os meus vêm de
-cenário sintético.
-
-Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): sem *classic control* o
-clique direito abre menu de contexto, que fica na frente e engole o que vier
-depois.
+Não é reconhecimento de sprite de cadáver — isso mudaria de espécie para espécie
+e precisaria de uma tabela por bicho, com um passo de aprendizado. É "este
+quadrado ficou diferente", que vale para qualquer bicho, inclusive um que o bot
+nunca viu.
 
 A comparação usa o quadro **mais recente** em que o bicho ainda constava da
 battle list. A janela de quadros para de crescer quando a lista esvazia, então o
 último item é o instante logo antes de ele **sair da lista** — a posição mais
 fresca e, para comparar a tela, o quadro mais perto no tempo, com menos coisa
-tendo mudado por outro motivo. Era o item mais velho da janela, cinco leituras
-atrás.
+tendo mudado por outro motivo.
 
-**Dois anéis com o mesmo desenho e razões opostas.** O anel da *varredura* de
-tecla é chutar em volta; o anel da *busca* na tela é medir. Eles compartilhavam
-a mesma função, e desligar a varredura encolheu a busca para um quadrado só — o
-do palpite, justamente o erro que a busca existe para corrigir. São funções
-separadas agora, com teste próprio.
+Medido em cenário sintético: corpo aparecendo muda **16,7** por pixel, chão
+parado **0,0**, chão inteiro trocado (o pior caso de água/fogo) **10,1**. Daí
+`LOOT_DIFF_MIN = 12`. Há uma segunda defesa, `LOOT_DIFF_MARGEM`: o vencedor tem
+de mudar 1,5× mais que o segundo colocado. Dois bichos morrendo em quadrados
+diferentes, ou a tela toda mudando, dão empate e não viram chute.
+
+**Não sabendo onde o corpo caiu, o bot larga o corpo** (`LOOT_SO_SE_ACHOU`) e diz
+que largou. Os números reais aparecem no log de cada morte (`mudou N por pixel,
+segundo M`) — é por eles que se calibra o limiar na sua caverna, já que os meus
+vêm de cenário sintético.
+
+Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): sem *classic control* o clique
+direito abre menu de contexto, que fica na frente e engole o que vier depois.
 
 **A fila é de vários corpos** (`LOOT_MAX_CORPOS`). Guardar um só deixava no chão
-todo bicho da briga menos o último, e numa caverna se mata em grupo.
+todo bicho da briga menos o último, e numa caverna se mata em grupo. Duas mortes
+no mesmo quadrado contam como uma.
 
-**O corpo é guardado em coordenada absoluta do odômetro, não em offset.** O
-corpo não anda: quem anda é o personagem, e offset guardado envelhece a cada
-passo. Corrigir esse envelhecimento a cada leitura foi a origem de dois bugs
-seguidos — o offset do corpo e depois o da fila de varredura. Posição absoluta
-não precisa de correção nenhuma: a conta é sempre a mesma subtração.
+**O corpo é guardado em coordenada absoluta do odômetro, não em offset.** O corpo
+não anda: quem anda é o personagem, e offset guardado envelhece a cada passo.
+Corrigir esse envelhecimento a cada leitura foi a origem de dois bugs seguidos.
+Posição absoluta não precisa de correção: a conta é sempre a mesma subtração.
 
 **Por que esperar a battle list limpar**, em vez de saquear a cada morte: no
 cliente, clique no mapa ou na tela durante o ataque troca o modo de luta de
@@ -129,42 +121,22 @@ personagem apanha de graça; e corpo no Tibia dura minutos, então não há pres
 
 **O prazo conta de quando o bot chega naquele corpo**, não da morte. Contado da
 morte, uma briga de três bichos condenava os dois últimos: eles morrem no mesmo
-instante e o prazo deles vencia enquanto o primeiro era saqueado. Medido: de
-três corpos na fila, um era largado sem receber um clique. Passado
-`LOOT_VALIDADE` desde a morte o corpo é largado sem tentativa — ele ficou para
-trás na rota e ir atrás dele é sair do caminho por nada.
+instante e o prazo deles vencia enquanto o primeiro era saqueado. Medido: de três
+corpos na fila, um era largado sem receber um clique. Passado `LOOT_VALIDADE`
+desde a morte o corpo é largado sem tentativa — ele ficou para trás na rota.
 
-**O `-` de cima e o `-` do numpad são teclas diferentes.** Para o Windows e para
-o cliente, um é `VK_OEM_MINUS` e o outro é `VK_SUBTRACT`. Com a hotkey no numpad
-e o bot apertando a de cima, não acontecia nada — e o log não acusava, porque do
-lado do bot a tecla tinha sido apertada com sucesso. Agora ele manda **as duas**
-(`LOOT_HOTKEY_NUMPAD`): tecla que o cliente não usa não faz nada.
-
-**A tecla age sobre o que está debaixo do cursor**, então o bot mira o mouse no
-quadrado antes de apertar. Sem isso ela saía com o mouse onde quer que ele
-tivesse ficado — em geral sobre o minimapa, do último clique de rota.
-
-A fila de apertadas é em **rodadas do anel inteiro**, não em blocos por
-quadrado, e tem teto (`LOOT_MAX_APERTADAS`). Em blocos, o teto cortaria os
-últimos quadrados sem nenhuma tentativa — e o quadrado certo pode ser justamente
-um deles. O teto existe porque 9 quadrados × 3 apertadas × 2 teclas dava 54
-ações em ~4 s, muito acima do que uma pessoa faz.
-
-Não pegou nada na caçada? Dois diagnósticos, e eles respondem perguntas
-diferentes:
+Não pegou nada na caçada? Dois diagnósticos, para perguntas diferentes:
 
 - `python main.py --corpo` mostra a **corrente**: para o bot saber onde caiu o
   corpo, a entrada na battle list e a barra de vida na tela do jogo têm de
-  aparecer na **mesma leitura**. Uma sem a outra é o que faz o bot não ir no
-  corpo, e o log da caçada não separa os dois casos — eles se consertam em
-  lugares diferentes. Ele conta as leituras e diz qual é o elo fraco.
-- `python main.py --loot` confere o **gesto**: tecla, clique e geometria da
-  tela, com um corpo do lado, e diz como ler cada resultado.
+  aparecer na **mesma leitura**. Ele conta as leituras e diz qual é o elo fraco.
+- `python main.py --loot` confere o **clique**, com um corpo do lado: botão,
+  geometria da tela, e como ler cada resultado.
 
-**Limitação conhecida:** com vários bichos na tela, o corpo marcado é o do mais
-perto na leitura em que a lista ainda o tinha — e com dois igualmente colados,
-esse pode ser o sobrevivente. A varredura em volta cobre o caso comum; separar
-de verdade exigiria seguir a identidade de cada criatura entre quadros.
+**Limitação conhecida:** com vários bichos na tela, o palpite inicial é o do mais
+perto na leitura em que a lista ainda o tinha. A identificação na tela corrige o
+palpite errado; com dois bichos morrendo ao mesmo tempo em quadrados diferentes
+ela dá empate e o bot larga, em vez de chutar.
 
 ### Como lutar: stand, chase ou kite
 
@@ -416,6 +388,14 @@ sai primeiro, que é a prioridade, e o resto da leitura continua.
 ## Decisões que vieram de erro medido
 
 O código está comentado com o *porquê* de cada uma delas.
+
+- **Código desligado mas presente volta a ser ligado por acidente.** A varredura
+  e a tecla de saque primeiro viraram opção `False`; depois saíram do código.
+  Enquanto eram opção, desligar a varredura encolheu o **anel de busca** do
+  corpo, porque os dois usavam a mesma função — dois anéis com o mesmo desenho e
+  razões opostas, varrer é chutar e buscar é medir. Com a busca encolhida o bot
+  procurava o corpo só no quadrado do palpite, justamente o erro que a busca
+  existe para corrigir. Um teste guarda a distinção; o resto foi removido.
 
 - **Tentativa e erro é sinal de que falta um sinal.** O bot varria os 9
   quadrados em volta do corpo porque a posição vinha de odometria e errava por

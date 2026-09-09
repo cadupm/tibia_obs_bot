@@ -12,7 +12,7 @@ configuracoes, e nenhuma delas tinha a ver com saquear:
 
 Este teste roda o laco de verdade (run_bot) nas seis combinacoes de modo de
 luta x andar ligado/desligado, e exige o mesmo resultado em todas: um bicho
-morreu, o corpo foi marcado, o bot clicou nele e apertou a tecla.
+morreu, o corpo foi achado na tela, e o bot clicou nele - uma vez.
 """
 import io
 import os
@@ -159,9 +159,8 @@ def roda(modo, andar):
         "achou": "[loot] achei o corpo na tela" in log,
         "marcou": "[loot] bicho morreu" in log,
         "cliques": sum(1 for a in fita if a[0] == "clique"),
-        "saques": sum(1 for a in fita
-                      if a[0] == "tecla" and a[1] == main.LOOT_HOTKEY),
-        "miras": sum(1 for a in fita if a[0] == "mira"),
+        "teclas": sum(1 for a in fita if a[0] == "tecla"
+                      and a[1] != main.STOP_WALK_KEY),
         "log": log,
     }
 
@@ -186,12 +185,14 @@ for modo in ("stand", "chase", "kite"):
                           f"morte e o loot nao fecha")
         if not r["cliques"]:
             falhas.append(f"{rotulo}: nao clicou no corpo")
-        if r["saques"] and not main.LOOT_USA_TECLA:
-            falhas.append(f"{rotulo}: apertou a tecla de saque com "
-                          f"LOOT_USA_TECLA desligado")
+        if r["cliques"] != main.LOOT_CLIQUES:
+            falhas.append(f"{rotulo}: {r['cliques']} clique(s) no corpo, "
+                          f"esperava exatamente {main.LOOT_CLIQUES}")
 
 # o gesto tem de ser o MESMO: nao e so "funciona em todos", e "funciona igual"
-gestos = {k: (v["cliques"], v["saques"]) for k, v in resultados.items()}
+# o gesto e o CLIQUE. As outras teclas do laco (atacar, andar, fechar menu) nao
+# sao saque e mudam legitimamente entre os modos.
+gestos = {k: v["cliques"] for k, v in resultados.items()}
 distintos = set(gestos.values())
 print(f"\ngestos distintos entre as 6 combinacoes: {len(distintos)} "
       f"{sorted(distintos)}")

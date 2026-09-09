@@ -129,7 +129,6 @@ print("roteiro: 0-1 vazia | 2-4 na lista | 5-10 engajado | 11+ vazia (morreu)\n"
 for i, o_que in fita:
     print(f"  quadro {i:>2}: {o_que}")
 
-saques = [i for i, o in fita if o == main.LOOT_HOTKEY]
 cliques = [i for i, o in fita if isinstance(o, tuple) and o[0] == "clique"]
 print(f"achou o corpo na tela: {'[loot] achei o corpo na tela' in log}")
 if "[loot] achei o corpo na tela" not in log:
@@ -138,7 +137,8 @@ if "[loot] achei o corpo na tela" not in log:
 miras = [i for i, o in fita if isinstance(o, tuple) and o[0] == "mira"]
 falhas = []
 print(f"\nmarcou o corpo: {'[loot] bicho morreu' in log}")
-print(f"saques ({main.LOOT_HOTKEY!r}): {saques}")
+print(f"tecla de saque no codigo: "
+      f"{'ainda existe' if hasattr(main, 'LOOT_HOTKEY') else 'removida'}")
 print(f"mirou o cursor: {miras}")
 print(f"clicou no corpo: {cliques}")
 if not cliques:
@@ -146,9 +146,9 @@ if not cliques:
 if "[loot] bicho morreu" not in log:
     falhas.append("o corpo nunca foi marcado: a fiacao entre a morte e o loot "
                   "nao fecha")
-if saques and not main.LOOT_USA_TECLA:
-    falhas.append("apertou a tecla de saque com LOOT_USA_TECLA desligado: o "
-                  "clique com o direito no corpo ja saqueia")
+if hasattr(main, "LOOT_HOTKEY"):
+    falhas.append("LOOT_HOTKEY voltou a existir: o gesto e um clique no corpo "
+                  "e mais nada")
 
 print("\nVEREDITO:", "OK - o loot acontece de ponta a ponta"
       if not falhas else "FALHOU: " + "; ".join(falhas))

@@ -35,6 +35,13 @@ painel = gui.Painel(_raiz)
 _raiz.update_idletasks()
 _raiz.update()
 _raiz.update_idletasks()
+# O corte de altura e agendado com after_idle no painel. Esperar que ele tenha
+# rodado deixava o teste FLAKY: sozinho passava, dentro do runner (com a
+# maquina ocupada) media alturas ainda em zero e reprovava sem defeito nenhum.
+# Chamar de proposito e deterministico e exercita o mesmo codigo.
+painel._ajusta_altura()
+_raiz.update_idletasks()
+_raiz.update()
 
 falhas = []
 tela_h = _raiz.winfo_screenheight()
