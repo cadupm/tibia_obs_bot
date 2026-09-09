@@ -5358,6 +5358,27 @@ def run_bot():
                 tela_agora = viewport(leitura)
                 agora_barras = detect_creatures(leitura, img=tela_agora)
                 calibra_a_barra()          # a barra do personagem tem de dar 0
+                # O PRIMEIRO QUADRO COM ALVO da sessao, cru. E nele que se ve a
+                # moldura vermelha que o cliente desenha no bicho atacado - o
+                # unico desenho da tela que e ALINHADO AO QUADRADO, e por isso
+                # o melhor localizador que existe aqui: nao depende de barra,
+                # de CREATURE_BAR_ABOVE nem de odometria. Uma vez por sessao,
+                # entao nao pesa no laco.
+                if alvo and not caminho.get("guardou_alvo"):
+                    caminho["guardou_alvo"] = True
+                    try:
+                        mss.tools.to_png(
+                            np.ascontiguousarray(
+                                tela_agora.astype(np.uint8)).tobytes(),
+                            (GAME_VIEW[2], GAME_VIEW[3]),
+                            output=os.path.join(
+                                os.path.dirname(os.path.abspath(__file__)),
+                                "ultimo_alvo_cru.png"))
+                        print("[setup] guardei ultimo_alvo_cru.png: o primeiro "
+                              "quadro com bicho engajado desta sessao")
+                    except Exception as erro:
+                        print(f"[setup] nao consegui guardar o quadro com "
+                              f"alvo: {type(erro).__name__}: {erro}")
                 mundo_agora = {
                     (round(odo_agora.pos[0] + q[0] * MINIMAP_PX_SQM),
                      round(odo_agora.pos[1] + q[1] * MINIMAP_PX_SQM))
