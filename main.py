@@ -271,6 +271,11 @@ LOOT_FECHA_MENU = True          # esc depois de clicar: se um menu de contexto
 # quadrado identificado na tela, o cursor ja esta em cima dele por causa do
 # clique, e uma apertada ali nao passeia por lugar nenhum. Vazio = so o clique.
 LOOT_TECLA = "-"
+LOOT_TECLA_DIST = 1             # SQM: a tecla so sai COLADO no corpo (ao lado
+                                # ou em cima). No cliente o saque exige
+                                # adjacencia, enquanto o clique direito vale a
+                                # qualquer distancia visivel - apertar a tecla
+                                # de longe nao pega nada e ainda gasta acao.
 LOOT_TECLA_NUMPAD = True        # mandar tambem a versao do numpad. Sao teclas
                                 # DIFERENTES: o '-' de cima e VK_OEM_MINUS e o
                                 # do numpad e VK_SUBTRACT. Com a hotkey do
@@ -2725,30 +2730,61 @@ class TravaDeAlvo:
     def atualiza(self, alvo, alvo_sprite, sprites, agora=None):
         """Devolve True se pode apertar a tecla de atacar (nenhum alvo preso)."""
         agora = time.time() if agora is None else agora
+
+        # UMA MORTE E UMA ENTRADA QUE SUMIU DA LISTA - com moldura na tela ou
+        # sem. Esta conta ficava depois do "return False" do caso engajado, e
+        # por isso NAO RODAVA durante a briga: numa caverna se mata em grupo, e
+        # a cada morte o cliente passa a moldura para o proximo sem que a lista
+        # fique vazia. O bot sobrescrevia o sprite rastreado em silencio e so
+        # registrava a ULTIMA morte da briga; os corpos dos primeiros ficavam
+        # no chao. Medido: tres bichos mortos, um corpo gravado.
+        #
+        # A conta e por CONTAGEM de entradas iguais, e nao por identidade,
+        # porque tres bonelords tem o mesmo sprite - nao ha como distinguir
+        # qual dos tres morreu, mas dá para saber que um morreu.
+        if self.sprite is not None:
+            iguais_agora = sum(1 for sp in sprites
+                               if sprite_igual(sp, self.sprite))
+            if iguais_agora < self.iguais:
+                # sumir de UMA leitura nao e morrer: a leitura da battle list
+                # falha de vez em quando, e tratar isso como morte fazia o bot
+                # voltar a clicar no mapa no meio da luta - o que no cliente
+                # troca o modo de luta de "chase" para "stand".
+                self.sumidas += 1
+                if self.sumidas >= TARGET_GONE_READS:
+                    quantos = self.iguais - iguais_agora
+                    print(f"[attack] {quantos} entrada(s) iguais ao meu alvo "
+                          f"sumiram da battle list em {self.sumidas} leituras "
+                          f"seguidas: morreu"
+                          + (", posso trocar" if not alvo else
+                             " (a moldura ja passou para o proximo)"))
+                    self.morreu = True     # o loot le isto e busca o corpo
+                    self.iguais = iguais_agora
+                    self.sumidas = 0
+                    if not alvo:
+                        self.solta()
+                        return True
+                elif not alvo:
+                    return False           # aguardando confirmacao
+            else:
+                self.sumidas = 0
+
         if alvo and alvo_sprite is not None:
+            trocou = self.sprite is None or not sprite_igual(self.sprite,
+                                                             alvo_sprite)
             self.sprite = alvo_sprite
-            self.iguais = sum(1 for sp in sprites
-                              if sprite_igual(sp, alvo_sprite))
-            self.desde, self.avisou, self.sumidas = None, False, 0
+            # NAO MEXER NA CONTAGEM COM QUEDA PENDENTE. Ela e a referencia da
+            # suspeita de morte, e refresca-la a cada leitura apagava a
+            # suspeita antes da confirmacao: a contagem caia de 3 para 2, a
+            # leitura seguinte adotava 2 como novo normal e a morte nunca
+            # fechava. Era por isso que so a ultima morte da briga entrava.
+            if trocou or self.sumidas == 0:
+                self.iguais = sum(1 for sp in sprites
+                                  if sprite_igual(sp, alvo_sprite))
+            self.desde, self.avisou = None, False
             return False
         if self.sprite is None:
             return True
-
-        iguais_agora = sum(1 for sp in sprites if sprite_igual(sp, self.sprite))
-        if iguais_agora < self.iguais:
-            # sumir de UMA leitura nao e morrer: a leitura da battle list falha
-            # de vez em quando, e tratar isso como morte fazia o bot voltar a
-            # clicar no mapa no meio da luta - o que no cliente troca o modo de
-            # luta de "chase" para "stand".
-            self.sumidas += 1
-            if self.sumidas < TARGET_GONE_READS:
-                return False
-            print(f"[attack] o bicho que eu atacava saiu da battle list em "
-                  f"{self.sumidas} leituras seguidas: morreu, posso trocar")
-            self.morreu = True             # o loot le isto e vai buscar o corpo
-            self.solta()
-            return True
-        self.sumidas = 0
         if self.desde is None:
             self.desde = agora
         if not self.avisou:
@@ -3596,7 +3632,7 @@ def mudou_quanto(antes, agora):
                         - agora.astype(np.float32)).mean())
 
 
-def acha_o_corpo(tela_antes, tela_agora, palpite, andou):
+def acha_o_corpo(tela_antes, tela_agora, palpite, andou, onde_havia=()):
     """
     Qual quadrado do anel mudou desde que o bicho estava vivo.
 
@@ -3606,8 +3642,14 @@ def acha_o_corpo(tela_antes, tela_agora, palpite, andou):
     - e o que alinha as duas imagens, porque o viewport acompanha o personagem
     e o mesmo lugar do mundo aparece deslocado.
 
+    `onde_havia` sao os quadrados em que HAVIA BICHO na leitura de referencia.
+    Sao os candidatos que importam: o corpo esta onde um bicho estava de pe.
+    Sem eles a busca era um anel de raio 1 em volta do palpite, e numa briga em
+    grupo o palpite e sempre o bicho mais perto - o corpo dos outros, a 4 SQM,
+    ficava fora do alcance da busca e nunca era achado.
+
     Devolve (quadrado, quanto_mudou, segundo_lugar). Quadrado None quando
-    nenhum candidato mudou o bastante, e ai vale o palpite com a varredura.
+    nenhum candidato mudou o bastante, e ai vale o palpite.
 
     O criterio e diferenca, e nao reconhecimento de sprite de corpo: sprite de
     corpo mudaria de especie para especie e precisaria de uma tabela; "este
@@ -3615,9 +3657,18 @@ def acha_o_corpo(tela_antes, tela_agora, palpite, andou):
     """
     if not LOOT_ACHA_CORPO or tela_antes is None or tela_agora is None:
         return None, 0.0, 0.0
+    # os candidatos: onde havia bicho, e o anel em volta do palpite. O anel
+    # continua porque a barra de vida e desenhada um quadrado acima da criatura
+    # e o arredondamento erra por 1 SQM com o bicho a meio passo.
+    candidatos = []
+    for base in list(onde_havia) + [palpite]:
+        for delta in anel_de_busca():
+            q = (base[0] + delta[0], base[1] + delta[1])
+            if q not in candidatos:
+                candidatos.append(q)
+
     notas = []
-    for delta in anel_de_busca():
-        aqui = (palpite[0] + delta[0], palpite[1] + delta[1])
+    for aqui in candidatos:
         # o MESMO lugar do mundo estava, no quadro antigo, deslocado pelo tanto
         # que o personagem andou desde entao
         antes_em = (aqui[0] + andou[0], aqui[1] + andou[1])
@@ -3626,6 +3677,8 @@ def acha_o_corpo(tela_antes, tela_agora, palpite, andou):
         nota = mudou_quanto(recorte_do_quadrado(tela_antes, antes_em),
                             recorte_do_quadrado(tela_agora, aqui))
         notas.append((nota, aqui))
+    if not notas:
+        return None, 0.0, 0.0
     if not notas:
         return None, 0.0, 0.0
     notas.sort(reverse=True)
@@ -3644,6 +3697,7 @@ def acha_o_corpo(tela_antes, tela_agora, palpite, andou):
                     key=lambda q: (abs(q[0] - palpite[0])
                                    + abs(q[1] - palpite[1])))
         return perto, melhor[0], segundo[0]
+
     return melhor[1], melhor[0], segundo[0]
 
 
@@ -3692,7 +3746,7 @@ def aperta_saque(teclado=None):
     return saiu
 
 
-def clica_no_corpo(leitura, quadrado, teclado=None):
+def clica_no_corpo(leitura, quadrado, teclado=None, distancia=None):
     """
     Clica no quadrado do corpo, com o botao configurado.
 
@@ -3700,8 +3754,8 @@ def clica_no_corpo(leitura, quadrado, teclado=None):
     botao direito sobre um corpo abre/saqueia, e o esquerdo so manda o
     personagem andar para la. Desligando LOOT_CLICA, so a tecla e usada.
 
-    Tudo NO MESMO PONTO: o quadrado do corpo. Um clique e, no maximo, uma
-    apertada de tecla - nada de varrer os quadrados em volta.
+    Tudo NO MESMO PONTO: o quadrado do corpo. Um clique e, estando COLADO, uma
+    apertada de tecla como reforco - nada de varrer os quadrados em volta.
 
     Devolve (quantos cliques, quais teclas).
     """
@@ -3717,10 +3771,13 @@ def clica_no_corpo(leitura, quadrado, teclado=None):
             if teclado is not None and not teclado.isActive:
                 focus_window(teclado)
             pyautogui.press(STOP_WALK_KEY)
-    # A TECLA, no MESMO ponto: o cursor ja esta sobre o corpo por causa do
-    # clique, e o saque rapido age sobre o que esta debaixo dele. Sem clique
-    # configurado, mira antes.
-    if LOOT_TECLA:
+    # A TECLA, no MESMO ponto e SO COLADO: o cursor ja esta sobre o corpo por
+    # causa do clique, e o saque rapido age sobre o que esta debaixo dele - mas
+    # so alcanca corpo ao lado ou em cima. De longe ela nao pega nada, e o
+    # clique direito ja da conta dessa distancia sozinho. Ela e o reforco para
+    # o caso de o clique nao ter saqueado, nao um segundo gesto.
+    colado = distancia is None or distancia <= LOOT_TECLA_DIST
+    if LOOT_TECLA and colado:
         if not cliques:
             largura = user32.GetSystemMetrics(0)
             altura = user32.GetSystemMetrics(1)
@@ -3848,7 +3905,7 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
                   f"largo ele")
             corpos.pop(0)
             return bool(corpos)
-        n, teclas = clica_no_corpo(leitura, quadrado, teclado)
+        n, teclas = clica_no_corpo(leitura, quadrado, teclado, distancia)
         loot_cd.mark()
         feito = []
         if n:
@@ -4439,20 +4496,27 @@ def run_bot():
                     historico = caminho.setdefault("bichos_vistos", [])
                     historico.append(
                         (tuple(odo_agora.pos) if odo_agora else (0, 0), perto,
-                         tela if LOOT_ACHA_CORPO else None))
+                         tela if LOOT_ACHA_CORPO else None, tuple(na_tela)))
                     del historico[:-(TARGET_GONE_READS + 2)]
             if ENABLE_LOOT and trava.morreu:
                 trava.morreu = False
                 historico = caminho.get("bichos_vistos") or []
                 if historico:
-                    # O QUADRO MAIS RECENTE em que o bicho ainda constava da
-                    # battle list. A janela para de crescer quando a lista
-                    # esvazia, entao o ultimo item e o instante logo antes de
-                    # ele SAIR DA LISTA - o melhor dos dois lados: e a posicao
-                    # mais fresca e, para comparar a tela, o quadro mais perto
-                    # no tempo, com menos coisa tendo mudado por outro motivo.
-                    # Era o item mais VELHO da janela, cinco leituras atras.
-                    visto_em, onde, tela_antes = historico[-1]
+                    # O QUADRO DE ANTES DA MORTE, e nao o mais recente. A morte
+                    # so e confirmada TARGET_GONE_READS leituras depois de a
+                    # entrada sumir, e nesse meio-tempo o quadro ja mostra o
+                    # corpo - comparar com ele da diferenca ZERO e a
+                    # identificacao nao acha nada.
+                    #
+                    # Ja foi o item mais recente da janela, e funcionava por
+                    # acidente: com UM bicho, a janela para de crescer quando a
+                    # lista esvazia, entao "o ultimo" era mesmo de antes da
+                    # morte. Com bicho sobrevivente na lista ela continua
+                    # enchendo, e "o ultimo" passa a ser DEPOIS da morte.
+                    # Medido: tres bichos mortos, um corpo gravado, dois com
+                    # diferenca 0.
+                    quantos_atras = min(TARGET_GONE_READS + 1, len(historico))
+                    visto_em, onde, tela_antes, havia = historico[-quantos_atras]
                     # ACHAR NA TELA. O palpite da odometria erra por 1 SQM com
                     # facilidade, e era por isso que o bot varria o anel por
                     # tentativa e erro. Comparando o quadrado com como ele
@@ -4465,9 +4529,15 @@ def run_bot():
                                   / MINIMAP_PX_SQM) if odo_agora else (0, 0)
                         palpite = (int(round(onde[0] - andado[0])),
                                    int(round(onde[1] - andado[1])))
+                        # os quadrados onde HAVIA BICHO naquela leitura,
+                        # trazidos para o referencial de agora
+                        havia_agora = [(int(round(q[0] - andado[0])),
+                                        int(round(q[1] - andado[1])))
+                                       for q in havia]
                         achou, nota, segundo = acha_o_corpo(
                             tela_antes, viewport(leitura), palpite,
-                            (int(round(andado[0])), int(round(andado[1]))))
+                            (int(round(andado[0])), int(round(andado[1]))),
+                            onde_havia=havia_agora)
                         if achou is not None:
                             print(f"[loot] o corpo esta em {achou}: esse "
                                   f"quadrado mudou {nota:.0f} por pixel desde "

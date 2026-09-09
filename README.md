@@ -65,8 +65,10 @@ e não há o que conferir depois. O esquerdo só manda o personagem andar para l
 Um clique, um ponto, e o corpo sai da fila.
 
 Depois do clique sai **uma** apertada da tecla de saque (`LOOT_TECLA`, padrão
-`-`), no mesmo ponto: o cursor já está sobre o corpo por causa do clique. Vazio
-desliga. E ela manda também a gêmea do numpad (`LOOT_TECLA_NUMPAD`), porque o `-`
+`-`), no mesmo ponto e só **colado** no corpo — ao lado ou em cima
+(`LOOT_TECLA_DIST`). É reforço para o caso de o clique não ter saqueado, não um
+segundo gesto: no cliente o saque exige adjacência, enquanto o clique direito
+vale a qualquer distância visível. Vazio desliga. E ela manda também a gêmea do numpad (`LOOT_TECLA_NUMPAD`), porque o `-`
 de cima não é o `-` do numpad — `VK_OEM_MINUS` contra `VK_SUBTRACT`. O bot
 apertava uma enquanto a hotkey do cliente estava na outra, e o log não acusava,
 porque do lado dele a tecla saía com sucesso.
@@ -111,9 +113,32 @@ cenário sintético.
 Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): sem *classic control* o clique
 direito abre menu de contexto, que fica na frente e engole o que vier depois.
 
-**A fila é de vários corpos** (`LOOT_MAX_CORPOS`). Guardar um só deixava no chão
-todo bicho da briga menos o último, e numa caverna se mata em grupo. Duas mortes
-no mesmo quadrado contam como uma.
+**A fila é de vários corpos** (`LOOT_MAX_CORPOS`): mata-se o grupo todo e depois
+se recolhe. Duas mortes no mesmo quadrado contam como uma. Fazer isso funcionar
+custou três consertos, todos encontrados por um teste que roda o laço com três
+bichos idênticos morrendo um a um:
+
+- **a morte no meio da briga não era detectada.** A conta de "uma entrada
+  desapareceu da lista" ficava depois do `return` do caso engajado, e por isso
+  não rodava durante a luta. A cada morte o cliente passa a moldura para o
+  próximo sem a lista esvaziar, o bot sobrescrevia o sprite rastreado em
+  silêncio, e só a **última** morte da briga era registrada. A conta é por
+  *contagem* de entradas iguais, não por identidade — três bonelords têm o mesmo
+  sprite, então não se sabe *qual* morreu, mas se sabe que um morreu;
+- **a contagem era refrescada com queda pendente**, apagando a suspeita antes da
+  confirmação: caía de 3 para 2, a leitura seguinte adotava 2 como o novo normal
+  e a morte nunca fechava;
+- **a referência da comparação de tela era o quadro mais recente.** Com um bicho
+  só isso funcionava por acidente (o histórico para de crescer quando a lista
+  esvazia); com sobrevivente na lista ele continua enchendo, e "o mais recente"
+  passa a ser *depois* da morte — diferença zero, nada identificado. Agora é o
+  quadro de `TARGET_GONE_READS + 1` leituras atrás.
+
+E a busca deixou de ser um anel em volta de um palpite: ela cobre **os quadrados
+onde havia bicho** na leitura de referência. O palpite é sempre o bicho mais
+perto, e com empate de distância sempre o mesmo dos três — o corpo dos outros,
+a 4 SQM, ficava fora do alcance da busca. O corpo está onde um bicho estava de
+pé, e a lista de criaturas daquela leitura diz exatamente onde cada um estava.
 
 **O corpo é guardado em coordenada absoluta do odômetro, não em offset.** O corpo
 não anda: quem anda é o personagem, e offset guardado envelhece a cada passo.
@@ -544,6 +569,7 @@ python testes/testa_loot.py           # vai até o corpo, clica, varre, esvazia 
 python testes/testa_loot_no_laco.py   # o loot no laço inteiro: morreu -> marcou -> saqueou
 python testes/testa_loot_modos.py     # o mesmo saque em stand/chase/kite, com e sem rota
 python testes/testa_acha_corpo.py     # acha o quadrado do corpo na tela, e admite quando não dá
+python testes/testa_loot_grupo.py     # três bichos: grava os três corpos, recolhe depois da briga
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI
