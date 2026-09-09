@@ -239,6 +239,40 @@ if not entra_des:
     falhas.append("bicho nao reconhecido ficou de fora com o interruptor "
                   "DESLIGADO: desligado nao filtra nada")
 
+# 4b) A MOLDURA DO ALVO nao pode fazer o bicho deixar de se reconhecer.
+# O recorte que a trava guarda e do bicho ENGAJADO, e no alvo o cliente desenha
+# uma moldura vermelha que faz parte do recorte; os sprites da lista costumam
+# vir de linha SEM moldura. Medido no sprite real de uma cacada: moldura de 1px
+# leva a diferenca media a 16.2 (limiar 12) e a correlacao a 0.574 (limiar
+# 0.90) - o bicho deixa de casar com o proprio sprite, e o log dizia "bicho nao
+# reconhecido" no meio de uma lista em que ele estava.
+def com_moldura(sp, espessura, cor=(200, 30, 30)):
+    b = sp.copy()
+    b[:espessura, :] = cor
+    b[-espessura:, :] = cor
+    b[:, :espessura] = cor
+    b[:, -espessura:] = cor
+    return b
+
+
+print("\nreconhecer o bicho ENGAJADO, com a moldura vermelha do alvo:")
+for espessura in (1, 2, 3):
+    engajado = com_moldura(BOM, espessura)
+    cru = main.sprite_igual(BOM, engajado)
+    achou = main.nome_do_sprite(engajado, MONSTROS)
+    print(f"  moldura de {espessura}px: comparacao crua casa? {cru} | "
+          f"nome_do_sprite -> {achou!r}")
+    if achou != "bicho bom":
+        falhas.append(f"com moldura de {espessura}px o bicho deixou de se "
+                      f"reconhecer (nome_do_sprite deu {achou!r}): a moldura "
+                      f"nao e parte do monstro, e sem isso o filtro de saque "
+                      f"descarta o corpo de quem ESTA marcado")
+# e nao pode confundir um com o outro so porque ignora a borda
+if main.nome_do_sprite(com_moldura(LIXO, 2), MONSTROS) != "bicho lixo":
+    falhas.append("ignorar a borda passou a confundir os dois bichos")
+if main.nome_do_sprite(com_moldura(DESCONHECIDO, 2), MONSTROS) is not None:
+    falhas.append("ignorar a borda passou a dar nome a sprite desconhecido")
+
 # 5) o FORMATO ANTIGO (so o sprite) continua valendo como "saqueia"
 # roda() substitui load_monsters e load_loot_flags por versoes de mentira; sem
 # devolver as de verdade, estes dois casos leriam o fixture em vez do arquivo -

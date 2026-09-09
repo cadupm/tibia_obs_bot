@@ -1008,6 +1008,23 @@ class Painel:
         if piso is not None and piso < 0.10:
             fora.append(f"piso da magia muito baixo ({main.SPELL_MANA_FLOOR}): "
                         f"conjurando ate ai nao sobra mana para a cura")
+
+        # TECLA QUE NAO EXISTE E O PIOR TIPO DE ERRO: o pyautogui nao reclama de
+        # nome que nao conhece, ele so NAO APERTA NADA - o bot decide andar e o
+        # personagem fica parado, sem erro em lugar nenhum. Ja aconteceu com o
+        # TEXTO DA DICA da interface digitado no campo
+        # ("cima-esq,cima-dir,..."), com as diagonais ligadas: quatro das oito
+        # direcoes nao existiam. O bot avisa no arranque, mas o aviso ficava no
+        # console; aqui ele aparece onde a escolha foi feita.
+        if main.KITE_DIAGONAIS:
+            ruins = [t.strip() for t in main.KITE_DIAGONAIS_TECLAS.split(",")
+                     if t.strip() and not main.tecla_existe(t.strip())]
+            if ruins:
+                fora.append(f"{', '.join(repr(t) for t in ruins)} nao "
+                            f"e(sao) tecla(s) que o bot saiba apertar: essas "
+                            f"diagonais ficam de fora e o personagem nao anda "
+                            f"nesses rumos. Use num7,num9,num1,num3 ou "
+                            f"q,e,z,c, e confira com --teclas")
         if main.ONLY_KNOWN_MONSTERS:
             com_sprite = sum(1 for a in self.monstros.values() if a is not None)
             if not com_sprite and not main.AUTO_LEARN:

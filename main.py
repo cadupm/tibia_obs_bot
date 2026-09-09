@@ -332,6 +332,16 @@ LOOT_ANTES_HP_MIN = 0.5         # fracao da vida abaixo da qual o saque NAO
                                 # segura o ataque: apanhando, revidar vem
                                 # primeiro.
 
+MONSTER_BORDA_ALVO = 3          # px de borda ignorados ao comparar o recorte
+                                # do bicho ENGAJADO com o sprite guardado. O
+                                # cliente desenha uma MOLDURA VERMELHA no alvo,
+                                # e ela e parte do recorte: medido no sprite
+                                # real de uma cacada, moldura de 1px ja leva a
+                                # diferenca media a 16.2 (limiar 12) e a
+                                # correlacao a 0.574 (limiar 0.90) - o bicho
+                                # deixa de casar com o proprio sprite. A
+                                # moldura nao e parte do monstro.
+
 LOOT_SO_MARCADOS = False        # saquear so os monstros marcados na lista.
                                 # ATACAR E SAQUEAR sao escolhas separadas: o
                                 # bot continua atacando o que sempre atacou.
@@ -2619,6 +2629,16 @@ def sprite_igual(a, b):
     return float((x * y).sum() / escala) >= MONSTER_CORR_MIN
 
 
+def sem_moldura(sprite, borda=None):
+    """O interior do recorte, sem a moldura que o cliente desenha no alvo."""
+    borda = MONSTER_BORDA_ALVO if borda is None else borda
+    if sprite is None or borda <= 0:
+        return sprite
+    if sprite.shape[0] <= 2 * borda or sprite.shape[1] <= 2 * borda:
+        return sprite
+    return sprite[borda:-borda, borda:-borda]
+
+
 def nome_do_sprite(sprite, monstros):
     """
     O nome do monstro cujo sprite casa com este, ou None.
@@ -2627,12 +2647,27 @@ def nome_do_sprite(sprite, monstros):
     sumiu da lista, e aqui ele vira nome - que e o que tem interruptor de loot.
     Usa o mesmo criterio de igualdade do resto (diferenca media OU correlacao),
     que e o que aguenta o sprite escurecido do bicho quase morto.
+
+    E TENTA DE NOVO SEM A MOLDURA. O recorte que a trava guarda e do bicho
+    ENGAJADO, e no alvo o cliente desenha uma moldura vermelha que faz parte do
+    recorte; os sprites da lista, em geral, foram aprendidos de linha SEM
+    moldura. Medido no sprite real de uma cacada: moldura de 1px ja leva a
+    diferenca media a 16.2 (limiar 12) e a correlacao a 0.574 (limiar 0.90) - o
+    bicho deixa de casar com o proprio sprite guardado, e o log dizia "bicho
+    nao reconhecido" no meio de uma lista em que ele estava.
     """
     if sprite is None:
         return None
     for nome, conhecido in monstros.items():
         if conhecido is not None and sprite_igual(conhecido, sprite):
             return nome
+    # segunda tentativa: so o interior, que a moldura do alvo nao alcanca
+    dentro = sem_moldura(sprite)
+    if dentro is not sprite:
+        for nome, conhecido in monstros.items():
+            if conhecido is not None and sprite_igual(sem_moldura(conhecido),
+                                                      dentro):
+                return nome
     return None
 
 
@@ -4799,6 +4834,11 @@ def run_bot():
                           + " nao esta marcado para saque; ignoro o corpo")
                     caminho["bichos_vistos"] = []
                 historico = (caminho.get("bichos_vistos") or []) if quero else []
+                # O AVISO DE "NUNCA VI NA TELA" NAO VALE quando quem descartou
+                # foi o FILTRO: eram dois motivos diferentes saindo com a mesma
+                # frase, e o log ficava culpando a deteccao de tela que nem
+                # tinha sido consultada.
+                avisa_sem_ver = quero
                 if historico:
                     # O QUADRO DE ANTES DA MORTE, e nao o mais recente. A morte
                     # so e confirmada TARGET_GONE_READS leituras depois de a
@@ -4886,7 +4926,7 @@ def run_bot():
                     if LOOT_NA_HORA:
                         saque_na_hora(leitura, teclado, caminho, loot_cd,
                                       odo_agora)
-                else:
+                elif avisa_sem_ver:
                     # ERA SILENCIO, e e uma das duas metades de "nao vai no
                     # corpo": o bicho morreu e o bot nunca o VIU na tela, entao
                     # nao tem onde procurar. Sem esta linha, o log fica igual ao

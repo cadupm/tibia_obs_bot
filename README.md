@@ -244,6 +244,22 @@ sumiu da battle list, e `monstros.json` liga sprite a nome — o mesmo critério
 igualdade do resto (diferença média **ou** correlação), que é o que aguenta o
 sprite escurecido do bicho quase morto.
 
+**E a comparação ignora a borda do recorte.** O sprite que a trava guarda é do
+bicho **engajado**, e no alvo o cliente desenha uma moldura vermelha que faz
+parte do recorte; os sprites da lista costumam vir de uma linha **sem** moldura.
+Medido no sprite real de uma caçada:
+
+| moldura | diferença média | correlação | casa? |
+|---|---|---|---|
+| 1 px | 16,2 (limiar 12) | 0,574 (limiar 0,90) | **não** |
+| 2 px | 29,8 | 0,424 | não |
+| só o interior | — | — | **sim** |
+
+Uma moldura de **um pixel** fazia o bicho deixar de casar com o próprio sprite
+guardado, e o log dizia `bicho nao reconhecido` no meio de uma lista em que ele
+estava — o corpo de quem **estava** marcado era ignorado. A moldura não é parte
+do monstro (`MONSTER_BORDA_ALVO`), e a segunda tentativa compara só o interior.
+
 Duas decisões de borda, ambas para não tirar nada de quem não pediu:
 
 - **filtro desligado saqueia todos**, e é o padrão;
@@ -519,6 +535,13 @@ O código está comentado com o *porquê* de cada uma delas.
   razões opostas, varrer é chutar e buscar é medir. Com a busca encolhida o bot
   procurava o corpo só no quadrado do palpite, justamente o erro que a busca
   existe para corrigir. Um teste guarda a distinção; o resto foi removido.
+
+- **Config salva vence o código; formulário aberto vence o arquivo.** Corrigi um
+  valor estragado direto no `config.json` com o painel aberto, e o próximo
+  *Salvar config* escreveu o valor velho de volta — o formulário em memória não
+  sabia da mudança. Insistir em corrigir o arquivo não resolve essa classe: o
+  painel passou a **avisar** quando as teclas das diagonais não são teclas de
+  verdade, no mesmo lugar em que a escolha é feita.
 
 - **Um fixture indistinguível não testa distinção.** O teste do saque seletivo
   usava sprites que diferiam só num quadradinho de 5×5 sobre fundo igual: a
