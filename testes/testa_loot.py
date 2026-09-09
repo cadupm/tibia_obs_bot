@@ -69,19 +69,26 @@ def clica_jogo(x, y, pausa=0.09, botao="esquerdo", mod=""):
     """
     Clique na tela do jogo, como o cliente responderia.
 
-    O ESQUERDO ANDA. O bot passou a se aproximar do corpo clicando no quadrado
-    dele na tela, em vez de clicar no minimapa - sem escala para errar. Um
-    falso que so REGISTRA o clique deixa o personagem parado, e o teste passa a
-    medir um bot que nunca chega: 17 cliques para um corpo a 2 SQM.
+    CLIQUE EM COISA LONGE E ORDEM DE IR ATE ELA. No cliente, clicar num corpo
+    fora de alcance nao devolve "longe demais": o personagem anda ate ficar do
+    lado e usa. E disso que o bot depende agora - ele da UM clique e para de
+    clicar, em vez de se aproximar a cliques e passar do corpo.
+
+    Um falso que so REGISTRA o clique deixa o personagem parado e o teste passa
+    a medir um bot que nunca chega - ja custou um teste neste projeto.
     """
     acoes.append(("clique", botao, mod, (x, y)))
-    if botao == "esquerdo":
-        vx, vy, vw, vh = main.GAME_VIEW
-        mc, ml = (vw // main.TILE_PX) // 2, (vh // main.TILE_PX) // 2
-        off = (round((x - vx) / main.TILE_PX - 0.5 - mc),
-               round((y - vy) / main.TILE_PX - 0.5 - ml))
+    vx, vy, vw, vh = main.GAME_VIEW
+    mc, ml = (vw // main.TILE_PX) // 2, (vh // main.TILE_PX) // 2
+    off = (round((x - vx) / main.TILE_PX - 0.5 - mc),
+           round((y - vy) / main.TILE_PX - 0.5 - ml))
+    if botao == "esquerdo":                # anda ate o proprio quadrado
         odo.pos[0] += off[0] * main.MINIMAP_PX_SQM
         odo.pos[1] += off[1] * main.MINIMAP_PX_SQM
+    elif max(abs(off[0]), abs(off[1])) > main.LOOT_DIST:
+        # o cliente anda ate ficar COLADO no corpo, e para ali
+        odo.pos[0] += (off[0] - (off[0] > 0) + (off[0] < 0)) * main.MINIMAP_PX_SQM
+        odo.pos[1] += (off[1] - (off[1] > 0) + (off[1] < 0)) * main.MINIMAP_PX_SQM
 
 
 main.click_game = clica_jogo
@@ -120,7 +127,14 @@ def cliques():
 
 
 def cliques_de_andar():
-    """Os cliques de aproximacao: clique no quadrado da tela para caminhar."""
+    """
+    Clique que NAO e o de saque: e o de andar, e nao pode existir mais.
+
+    O bot se aproximava do corpo clicando no quadrado dele leitura apos
+    leitura. Relatado em cacada: "clicou nele e depois clicou mais duas vezes a
+    frente" - com a odometria um quadrado atras, os cliques seguintes caem
+    adiante do corpo e o personagem passa direto.
+    """
     return [a for a in acoes
             if a[0] == "clique" and a[1] != main.LOOT_BOTAO]
 
@@ -156,15 +170,19 @@ for modo, dist in (("stand", 1), ("chase", 2), ("kite", main.KITE_DIST)):
     # da area do jogo); as duas formas contam como "foi ate ele"
     andou = [a for a in acoes if a[0] == "mapa"] + cliques_de_andar()
     gestos[modo] = (len(cliques()), len(teclas_de_saque()))
-    print(f"  {modo:<6} (corpo a {dist} SQM): {len(andou)} passo(s) para "
-          f"chegar, {len(cliques())} clique(s) no corpo, "
+    print(f"  {modo:<6} (corpo a {dist} SQM): {len(andou)} clique(s) de andar, "
+          f"{len(cliques())} clique(s) no corpo, "
           f"{len(teclas_de_saque())} tecla(s), terminou={acabou}")
     if not acabou:
         falhas.append(f"{modo}: nao terminou o saque")
-    if not cliques():
-        falhas.append(f"{modo}: nunca clicou no corpo")
-    if dist > main.LOOT_DIST and not andou:
-        falhas.append(f"{modo}: corpo a {dist} SQM e nao andou ate ele")
+    if len(cliques()) != 1:
+        falhas.append(f"{modo}: {len(cliques())} clique(s) no corpo, esperava "
+                      f"exatamente 1")
+    if andou:
+        falhas.append(f"{modo}: {len(andou)} clique(s) de andar atras do "
+                      f"corpo. Clicar no corpo JA e a ordem de ir ate ele - "
+                      f"clicar de novo enquanto o personagem anda joga o "
+                      f"clique adiante dele")
 
 print(f"  gesto (cliques, teclas) por modo: {gestos}")
 if len(set(gestos.values())) != 1:
@@ -230,6 +248,9 @@ if not acabou or estado.get("corpos"):
 if len(cliques()) != 3:
     falhas.append(f"{len(cliques())} clique(s) para 3 corpos: cada corpo tem "
                   f"de receber o seu, e so o seu")
+if cliques_de_andar():
+    falhas.append(f"{len(cliques_de_andar())} clique(s) de andar entre os tres "
+                  f"corpos: o clique no corpo ja leva o personagem ate la")
 
 # ------------------------ 6) o corpo NAO envelhece: posicao absoluta
 estado = zera()

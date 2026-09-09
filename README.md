@@ -59,17 +59,50 @@ serve de freio de mão.
 lutar: acontece **depois** da briga e é **igual** em stand, chase e kite. O modo
 de luta muda de onde se parte, não o que se faz com o corpo.
 
-**Chegar no corpo é clicar no quadrado dele na tela do jogo** (`LOOT_ANDA_CLICANDO`),
-e não clicar no minimapa. O clique de minimapa converte SQM em pixel por
-`MINIMAP_PX_SQM` — um número que se mede à mão com `--zoom` e que muda com o zoom
-do jogo. Relatado em caçada: *"vai na direção certa mas passa a mais muitas
-vezes"*. Na tela do jogo não há escala para errar: o quadrado tem `TILE_PX` de
-lado e o pixel do centro sai de uma conta fechada, e o cliente acha o caminho.
-Fora da área do jogo não existe quadrado para clicar, e aí o minimapa volta a
-valer.
+**O bot não anda atrás do corpo: ele dá UM clique em cima dele.** No cliente,
+clicar num corpo — perto ou longe — já é a ordem de ir até ele e abrir: o
+próprio cliente acha o caminho. O bot chegava a cliques, um passo por leitura, e
+em caçada isso apareceu como *"clicou nele e depois clicou mais duas vezes à
+frente"*: com a odometria um quadrado atrás, os cliques seguintes caem **adiante**
+do corpo e o personagem passa direto.
 
-Medido: com `MINIMAP_PX_SQM` em 1, 2 ou 4, o clique de aproximação cai **no mesmo
-pixel** — um caminho que não lê esse número não erra por causa dele.
+O gesto tem duas metades e nada entre elas:
+
+1. **um clique** em cima do quadrado do corpo, e nunca um segundo na mesma
+   aproximação;
+2. **a tecla de saque**, que age sobre o quadrado debaixo do cursor e só alcança
+   corpo ao lado ou em cima — sai junto com o clique se já estava colado, ou
+   sozinha quando o personagem chega.
+
+A única coisa que autoriza um clique novo naquele corpo é a **briga cancelar a
+caminhada**: a tecla de parar solta todas as ações no cliente, e isso inclui o
+trajeto que o clique tinha pedido. O bot detecta isso pelo buraco na contagem de
+leituras — se ele deixou de cuidar deste corpo por algumas leituras, foi lutar.
+
+**E o clique sai na leitura da MORTE.** O quadrado do corpo é guardado em
+coordenada de mundo e reconvertido pela odometria toda vez que se olha para ele,
+e a odometria deriva; na leitura da morte a conversão é a identidade — o
+quadrado saiu daquela mesma leitura. Clicar depois é clicar num quadrado que
+envelheceu, e foi o que apareceu como *"errou os dois targets que matou por um
+SQM, e não looteou"*.
+
+Isso também é o que faz valer **mata, saqueia, ataca o próximo**: enquanto o
+saque só valia para corpo colado, o bicho morto a 2 SQM esperava a briga inteira
+— *"matou o primeiro e não foi lootear, depois continuou atacando sem lootear"*.
+Agora qualquer corpo **dentro da tela** é clicado na hora, e a tecla de atacar
+espera uma leitura. Um corpo por leitura: dois cliques na mesma leitura mandam
+duas caminhadas e só a última vale.
+
+O preço, assumido: corpo longe faz o cliente andar durante a briga. Um clique
+num corpo é um *usar*, não é a ordem de movimento que troca *chase* por *stand*,
+mas a caminhada que ele provoca é movimento. Apanhando (`LOOT_ANTES_HP_MIN`),
+revidar vem primeiro.
+
+Fora da área do jogo não existe quadrado para clicar e o corpo é largado. O
+clique de minimapa que assumia ali dependia de `MINIMAP_PX_SQM` — um número que
+se mede à mão com `--zoom` e que muda com o zoom do jogo —, e era a origem do
+*"vai na direção certa mas passa a mais muitas vezes"*. Medido: com
+`MINIMAP_PX_SQM` em 1, 2 ou 4, o clique cai **no mesmo pixel**.
 
 O gesto cabe numa frase: **chegar no corpo e clicar nele com o botão direito.**
 No Tibia o direito sobre um corpo saqueia — sabendo que clicou nele, está feito,
@@ -803,6 +836,12 @@ O código está comentado com o *porquê* de cada uma delas.
   invariante: quatro bichos, a moldura passando adiante, e a exigência de que
   cada morte seja detectada quando a lista **não** esvazia.
 
+- **Repetir um gesto enquanto o mundo se move é como se erra por um quadrado.**
+  O bot se aproximava do corpo clicando no quadrado dele leitura após leitura.
+  Cada clique estava certo *quando foi calculado*, e errado quando saía: o
+  personagem já tinha andado e a odometria ainda não. Um clique só, no instante
+  em que a posição é exata, e depois esperar — o cliente sabe andar sozinho.
+
 - **Prazo medido no relógio de parede cobra do bot o tempo em que ele não
   estava tentando.** `LOOT_PRAZO` é "o tempo de chegar no corpo", e a briga que
   aparece no meio do caminho consumia esse prazo inteiro sem que um passo fosse
@@ -968,7 +1007,8 @@ python testes/testa_corpo_onde_morreu.py  # o corpo sai onde ele morreu, não on
 python testes/testa_loot_precisao.py  # a aproximação cai no pixel do quadrado, sem escala
 python testes/testa_loot_quatro.py    # 4 bichos, 3 marcados: os 3 corpos são pegos
 python testes/testa_loot_movimento.py # barra que andou não entra como morte
-python testes/testa_loot_interrompido.py  # briga no meio não custa o corpo
+python testes/testa_loot_interrompido.py  # briga no meio não custa o corpo,
+                                          # e é um clique por aproximação
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI

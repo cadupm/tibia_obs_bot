@@ -71,7 +71,8 @@ class Janela:
     isMinimized = False
 
 
-MUNDO = {"ch": [0, 0]}      # onde o personagem esta, em SQM
+# onde o personagem esta e para onde o cliente esta levando ele
+MUNDO = {"ch": [0, 0], "indo": None}
 
 
 class OdoFalso:
@@ -112,10 +113,9 @@ A_VIVO = {"A": A_MORRE_EM}
 fase(2, {}, [], [], None)                            # cave vazia
 fase(2, A_VIVO, [], ["A"], None)                     # A aparece
 fase(6, A_VIVO, [], ["A"], "A")                      # engajado, apanhando
-# A MORRE longe. A caminhada COMECA aqui e nao termina: 12 leituras dao para a
-# morte fechar, a carencia passar e sairem dois cliques de aproximacao - e B
-# chega antes do terceiro.
-fase(12, {}, [A_MORRE_EM], [], None)
+# A MORRE longe. Sao 5 leituras: da para a morte fechar e o clique no corpo
+# sair, e B chega com o personagem AINDA A CAMINHO - que e o caso a medir.
+fase(5, {}, [A_MORRE_EM], [], None)
 # B aparece no meio da caminhada e e morto colado
 B_VIVO = {"B": B_VEM_DE}
 fase(2, B_VIVO, [A_MORRE_EM], ["B"], None)
@@ -154,21 +154,39 @@ def battle_agora(_win):
 
 def loop_sleep(_s):
     quadro["i"] += 1
+    # O CLIENTE ANDA ENTRE UMA LEITURA E OUTRA, um quadrado por vez, ate ficar
+    # COLADO no destino. E a caminhada que o clique pediu.
+    indo = MUNDO["indo"]
+    # BICHO VIVO NA TELA CANCELA A CAMINHADA. No cliente e o que acontece de
+    # dois jeitos: o bot manda a tecla de parar ao entrar em briga, e o proprio
+    # bicho fica no caminho. Sem isso o personagem atravessaria a briga andando
+    # e o teste nunca mediria a interrupcao.
+    if FASES[min(quadro["i"], len(FASES) - 1)][0]:
+        MUNDO["indo"] = indo = None
+    if indo is not None:
+        falta = (indo[0] - MUNDO["ch"][0], indo[1] - MUNDO["ch"][1])
+        if max(abs(falta[0]), abs(falta[1])) <= 1:
+            MUNDO["indo"] = None
+        else:
+            MUNDO["ch"][0] += (falta[0] > 0) - (falta[0] < 0)
+            MUNDO["ch"][1] += (falta[1] > 0) - (falta[1] < 0)
     if quadro["i"] >= len(FASES):
         main.STOP = True
 
 
 def clica_jogo(x, y, pausa=0.09, botao="esquerdo", mod=""):
+    """
+    O cliente respondendo ao clique.
+
+    CLIQUE EM COISA LONGE E ORDEM DE IR ATE ELA: o personagem anda sozinho, um
+    quadrado por leitura, ate ficar do lado. Nao chega de uma vez - se o teste
+    teleportasse, nao haveria caminhada para a briga interromper, que e
+    justamente o que se quer medir.
+    """
     fita.append((agora(), botao, (x, y)))
-    if botao == "esquerdo":
-        # O CLIQUE ESQUERDO ANDA: um quadrado por clique, na direcao pedida.
-        # E o cliente que acha o caminho, e um passo por clique e o pior caso
-        # honesto - se o teste teleportasse o personagem, nao mediria
-        # aproximacao nenhuma.
-        alvo = (round((x - _vx) / main.TILE_PX - 0.5) - MEIO_COL,
-                round((y - _vy) / main.TILE_PX - 0.5) - MEIO_LIN)
-        MUNDO["ch"][0] += (alvo[0] > 0) - (alvo[0] < 0)
-        MUNDO["ch"][1] += (alvo[1] > 0) - (alvo[1] < 0)
+    alvo = (round((x - _vx) / main.TILE_PX - 0.5) - MEIO_COL,
+            round((y - _vy) / main.TILE_PX - 0.5) - MEIO_LIN)
+    MUNDO["indo"] = [MUNDO["ch"][0] + alvo[0], MUNDO["ch"][1] + alvo[1]]
 
 
 main.setup_windows = lambda: (Janela(), Janela())
@@ -183,8 +201,16 @@ main.is_usable = lambda win: True
 main.focus_window = lambda win: True
 main.restore_windows = lambda: None
 main.keyboard = type("K", (), {"is_pressed": staticmethod(lambda k: False)})()
+def aperta(t):
+    fita.append((agora(), "tecla", t))
+    if t == main.STOP_WALK_KEY:
+        # no cliente esta tecla para TODAS as acoes, e isso inclui a caminhada
+        # que o clique no corpo tinha pedido
+        MUNDO["indo"] = None
+
+
 main.pyautogui = type("P", (), {
-    "press": staticmethod(lambda t: fita.append((agora(), "tecla", t))),
+    "press": staticmethod(aperta),
     "keyDown": staticmethod(lambda t: None),
     "keyUp": staticmethod(lambda t: None)})()
 main.click_minimap = lambda w, p: fita.append((agora(), "mapa", p))
@@ -235,7 +261,8 @@ saqueados = [l for l in log.splitlines()
 
 print(f"A morre em {A_MORRE_EM} (longe, exige caminhada) e B em "
       f"{B_MORRE_EM} (colado)\n")
-print(f"cliques de andar ate o corpo: {len(andadas)}")
+print(f"cliques de ANDAR (esquerdo, que nao deviam existir): "
+      f"{len(andadas)}")
 print(f"cliques de saque: {len(saques)}")
 for f in saques:
     print(f"   leitura {f[0]}: {f[2]}")
@@ -251,20 +278,32 @@ if largou:
     for l in largou:
         print("   " + l.strip())
 
+# A REGRA DE OURO: a rota nao pode andar com CORPO PENDENTE. Retomar o
+# trajeto entre uma briga e outra, com a fila vazia, esta certo - o errado e
+# sair andando deixando corpo no chao. Entao a conta e a fila, leitura a
+# leitura, e nao "antes do ultimo saque".
 linhas = log.splitlines()
-retomou = [i for i, l in enumerate(linhas) if "retomando o trajeto" in l]
-ultimo_saque = max([i for i, l in enumerate(linhas)
-                    if "Saqueado" in l or "saqueio na hora" in l] or [-1])
-antes_do_saque = [i for i in retomou if i < ultimo_saque]
-print(chr(10) + f"regra de ouro: 'retomando o trajeto' em {retomou}, "
-      f"ultimo saque na linha {ultimo_saque}")
+retomou, na_fila, com_corpo_pendente = [], 0, []
+for i, l in enumerate(linhas):
+    if "corpo(s) na fila" in l:
+        na_fila = int(l.split("; ")[1].split(" corpo")[0])
+    elif ("Saqueado" in l or "largo ele" in l or "; sigo" in l
+          or "saqueio na hora" in l or "ficou para tras" in l):
+        na_fila = max(na_fila - 1, 0)
+    elif "retomando o trajeto" in l:
+        retomou.append(i)
+        if na_fila:
+            com_corpo_pendente.append((i, na_fila))
+antes_do_saque = com_corpo_pendente
+print(chr(10) + f"regra de ouro: 'retomando o trajeto' nas linhas "
+      f"{retomou}; com corpo ainda na fila: {com_corpo_pendente or 'nenhuma'}")
 
 falhas = []
 if antes_do_saque:
     falhas.append(
-        f"a rota foi retomada nas linhas {antes_do_saque}, antes do ultimo "
-        f"saque (linha {ultimo_saque}): mata, LOOTEIA, ataca o proximo ate "
-        f"acabar a battle list, e SO DEPOIS segue para o ponto da rota")
+        f"a rota foi retomada com corpo ainda na fila {antes_do_saque} "
+        f"(linha, corpos): mata, LOOTEIA, ataca o proximo ate acabar a battle "
+        f"list, e SO DEPOIS segue para o ponto da rota")
 if not retomou:
     falhas.append("a rota nunca foi retomada: depois de acabar a battle list e "
                   "recolher os corpos o bot tem de seguir o trajeto")
@@ -274,12 +313,46 @@ if desistiu:
         f"CHEGAR no corpo, e a briga do meio nao e tempo tentando chegar - "
         f"contado no relogio de parede, a briga consome o prazo inteiro e o "
         f"corpo e largado sem nunca ter recebido um clique")
+# A BRIGA TEM DE CAIR NO MEIO DO SAQUE. Se o corpo de A fosse clicado e
+# saqueado antes de B aparecer, o teste nao mediria interrupcao nenhuma - so
+# um saque tranquilo seguido de outro. A prova e ter [attack] entre o clique
+# no corpo de A e o "Saqueado" dele.
+clicou_em = next((i for i, l in enumerate(linhas)
+                  if "1 clique com o botao" in l), None)
+saqueou_em = next((i for i, l in enumerate(linhas)
+                   if "Saqueado" in l), None)
+brigou_no_meio = (clicou_em is not None and saqueou_em is not None
+                  and any("[attack]" in l
+                          for l in linhas[clicou_em:saqueou_em]))
+print(f"a briga caiu ENTRE o clique no corpo e o saque dele? "
+      f"{brigou_no_meio}")
+if not brigou_no_meio:
+    falhas.append("a briga nao caiu no meio do saque: o roteiro tem de por o "
+                  "bicho novo com o personagem AINDA A CAMINHO do corpo, "
+                  "senao nao ha interrupcao para medir")
 if len(saqueados) < 2:
     falhas.append(f"saqueou {len(saqueados)} de 2 corpos: o de B esta colado e "
                   f"o de A ficou esperando a briga acabar")
-if not andadas:
-    falhas.append("nao andou nenhuma vez atras do corpo de A, que morreu a "
-                  "3 SQM")
+if andadas:
+    falhas.append(
+        f"{len(andadas)} clique(s) de andar {[f[2] for f in andadas]}. "
+        f"Clicar no corpo JA e a ordem de ir ate ele; clicar de novo enquanto "
+        f"o personagem anda joga o clique adiante dele, e foi assim que "
+        f"apareceu em cacada: 'clicou nele e depois clicou mais duas vezes a "
+        f"frente'")
+# UM CLIQUE POR APROXIMACAO. Sao 2 corpos; a briga cancelou a caminhada ate um
+# deles, e essa e a unica razao que autoriza um clique novo naquele corpo - a
+# tecla de parar solta todas as acoes no cliente, inclusive a caminhada que o
+# clique tinha pedido. Fora isso, clicar de novo enquanto o personagem anda e o
+# que jogava o clique adiante do corpo.
+recomecos = [l for l in linhas if "clico nele outra vez" in l]
+esperado_cliques = 2 + len(recomecos)
+print(f"cliques: {len(saques)} para 2 corpos + {len(recomecos)} caminhada(s) "
+      f"cancelada(s) pela briga")
+if len(saques) != esperado_cliques:
+    falhas.append(f"{len(saques)} cliques de saque, esperava "
+                  f"{esperado_cliques}: um por corpo, mais um por caminhada "
+                  f"que a briga cancelou")
 
 print("\nVEREDITO:", "OK - a briga do meio nao custa o corpo"
       if not falhas else "FALHOU: " + "; ".join(falhas))

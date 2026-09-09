@@ -124,7 +124,7 @@ for off in ((3, 0), (-4, 2), (0, -3), (5, -4), (-2, -2)):
         falhas.append(f"corpo em {off}: usou o minimapa, cuja escala pode "
                       f"estar errada, tendo o quadrado dentro da tela")
 
-# ---------- 2) fora da tela do jogo, o minimapa volta a valer
+# ---------- 2) fora da tela do jogo nao se clica em lugar nenhum
 vw = main.GAME_VIEW[2] // main.TILE_PX
 fora = (vw // 2 + 3, 0)
 odo.pos = [0, 0]
@@ -132,11 +132,19 @@ acoes.clear()
 estado = {}
 main.marca_o_corpo(estado, fora, odo, na_tela=True)
 main.loot(Janela(), Janela(), estado, Livre(), odo)
-print(f"\ncorpo em {fora}, FORA da tela do jogo: "
-      f"{[a[0] for a in acoes]}")
-if not any(a[0] == "mapa" for a in acoes):
-    falhas.append(f"corpo fora da tela em {fora}: nao ha quadrado para clicar, "
-                  f"e o minimapa tem de assumir")
+print(chr(10) + f"corpo em {fora}, FORA da tela do jogo: "
+      f"{[a[0] for a in acoes] or 'nenhuma acao'}; sobrou "
+      f"{len(estado.get('corpos') or [])} na fila")
+if any(a[0] == "mapa" for a in acoes):
+    falhas.append(f"corpo fora da tela em {fora}: clicou no minimapa. Era o "
+                  f"que 'assumia' ali, e depende da mesma escala que fazia o "
+                  f"personagem passar do corpo")
+if any(a[0] == "jogo" for a in acoes):
+    falhas.append(f"corpo fora da tela em {fora}: clicou na tela do jogo, onde "
+                  f"nao ha quadrado dele - o clique cai no painel")
+if estado.get("corpos"):
+    falhas.append(f"corpo fora da tela em {fora} continua na fila, e loot() "
+                  f"devolvendo True segura a rota para sempre")
 
 # ---------- 3) o caminho pela tela NAO DEPENDE de MINIMAP_PX_SQM
 # Esta e a propriedade que importa e que da para medir: mudando a escala do
