@@ -30,6 +30,7 @@ except tk.TclError as erro:
     raise SystemExit(0)
 
 import gui
+import main
 
 painel = gui.Painel(_raiz)
 _raiz.update_idletasks()
@@ -142,6 +143,66 @@ for atributo, rotulo in (("lista_monstros", "lista de monstros"),
     if not parou:
         falhas.append(f"a roda sobre a {rotulo} rolou a aba junto: quem tem "
                       f"rolagem propria fica com a roda, senao as duas brigam")
+
+# ------------------------------------------------- a caixa de marcar do saque
+# Era "$ " no texto do Listbox mais um botao "Saquear: sim/nao" para alternar o
+# selecionado: duas etapas para uma decisao de um clique, e um simbolo a
+# explicar. Agora e Treeview com coluna clicavel - o gesto que se espera de uma
+# caixa de marcar.
+painel.notas.select(1)
+_raiz.update_idletasks()
+_raiz.update()
+lista = painel.lista_monstros
+print(f"\nlista de monstros: {lista.winfo_class()}, "
+      f"{len(lista.get_children())} linha(s)")
+if lista.winfo_class() != "Treeview":
+    falhas.append(f"a lista e {lista.winfo_class()}: sem coluna nao ha caixa "
+                  f"de marcar clicavel")
+elif not lista.get_children():
+    print("  (lista vazia; nao ha o que clicar)")
+else:
+    gravou = []
+    real_save = main.save_monsters
+    main.save_monsters = lambda m, caminho=None, loot=None: \
+        gravou.append(dict(loot or {}))
+    alvo = lista.get_children()[0]
+
+    def clica_em(coluna):
+        caixa = lista.bbox(alvo, coluna)
+        if not caixa:
+            return None
+        ev = type("E", (), {"x": caixa[0] + caixa[2] // 2,
+                            "y": caixa[1] + caixa[3] // 2})()
+        painel._clique_na_lista(ev)
+        _raiz.update_idletasks()
+        return lista.item(alvo, "values")[0]
+
+    antes = lista.item(alvo, "values")[0]
+    depois = clica_em("saque")
+    print(f"  clique na coluna $: {antes!r} -> {depois!r}")
+    if depois == antes:
+        falhas.append("clicar na coluna do saque nao alternou a marca")
+    if not gravou:
+        falhas.append("alternou a marca e nao gravou: a escolha se perderia "
+                      "ao fechar o painel")
+    elif alvo not in gravou[-1]:
+        falhas.append(f"gravou sem a flag de {alvo!r}: {gravou[-1]}")
+
+    antes2 = lista.item(alvo, "values")[0]
+    depois2 = clica_em("nome")
+    print(f"  clique na coluna do nome: {antes2!r} -> {depois2!r} "
+          f"(nao devia mudar)")
+    if depois2 != antes2:
+        falhas.append("clicar no NOME alternou a marca: so a coluna da caixa "
+                      "alterna, senao escolher um monstro para renomear "
+                      "mudaria o saque dele sem querer")
+
+    # o iid da linha E o nome, e e por ele que as acoes acham o monstro
+    lista.selection_set(alvo)
+    if painel._nome_selecionado() != alvo:
+        falhas.append(f"_nome_selecionado devolveu "
+                      f"{painel._nome_selecionado()!r}, esperava {alvo!r}")
+    main.save_monsters = real_save
 
 _raiz.destroy()
 print("\nVEREDITO:", "OK - o painel cabe na tela e tudo dentro dele e alcancavel"

@@ -707,9 +707,21 @@ class Painel:
             row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
         self.vars["AUTO_LEARN"] = (auto, bool)
 
-        self.lista_monstros = tk.Listbox(quadro, height=4, width=26,
-                                         exportselection=False)
+        # TREEVIEW, e nao Listbox, por causa da CAIXA DE MARCAR: o Listbox nao
+        # tem coluna, entao a escolha de saque virava um "$" no texto mais um
+        # botao para alternar o selecionado - duas etapas e um simbolo a
+        # explicar. Aqui o clique diz em que coluna caiu, e a caixa alterna
+        # sozinha.
+        self.lista_monstros = ttk.Treeview(
+            quadro, columns=("saque", "nome"), show="headings", height=4,
+            selectmode="browse")
+        self.lista_monstros.heading("saque", text="$")
+        self.lista_monstros.heading("nome", text="monstro")
+        self.lista_monstros.column("saque", width=28, anchor="center",
+                                   stretch=False)
+        self.lista_monstros.column("nome", width=200, anchor="w")
         self.lista_monstros.grid(row=2, column=0, rowspan=3, padx=6, pady=2)
+        self.lista_monstros.bind("<Button-1>", self._clique_na_lista)
         self._recarrega_monstros()
 
         col = ttk.Frame(quadro)
@@ -739,12 +751,10 @@ class Painel:
                     textvariable=self.linha_battle).grid(row=0, column=0)
         ttk.Button(canto, text="Remover", width=8,
                    command=self.remover_monstro).grid(row=0, column=1, padx=(3, 0))
-        ttk.Button(acoes, text="Saquear: sim/nao", width=16,
-                   command=self.alterna_loot).grid(row=2, column=0, pady=1)
         var_so = tk.BooleanVar()
-        ttk.Checkbutton(acoes, text="so os marcados", variable=var_so,
+        ttk.Checkbutton(acoes, text="saquear so os marcados", variable=var_so,
                         command=self._atualiza_habilitacao).grid(
-            row=2, column=1, padx=(4, 0), sticky="w")
+            row=2, column=0, columnspan=2, pady=1, sticky="w")
         self.vars["LOOT_SO_MARCADOS"] = (var_so, bool)
 
         # O RECADO FICA AQUI, e nao so no log: o log e de poucas linhas e a
@@ -760,9 +770,9 @@ class Painel:
                   text="Duas etapas: (1) cadastra o nome, (2) com o bicho "
                        "ENGAJADO no jogo, pega o sprite da linha escolhida da "
                        "battle list. So o sprite reconhece - nome sozinho nao "
-                       "filtra nada, porque a leitura e de pixel. O '$' diz de "
-                       "quem o bot pega o corpo: atacar e saquear sao escolhas "
-                       "separadas."
+                       "filtra nada, porque a leitura e de pixel. A coluna "
+                       "'$' diz de quem o bot pega o corpo - clique nela para "
+                       "alternar. Atacar e saquear sao escolhas separadas."
                   ).grid(row=7, column=0, columnspan=3, sticky="w", padx=6,
                          pady=(2, 4))
         self._dica_monstro()
@@ -852,11 +862,13 @@ class Painel:
         pode ser atacado e nao saqueado - e o pedido: atacar tudo, saquear so
         alguns.
         """
-        self.lista_monstros.delete(0, "end")
+        for item in self.lista_monstros.get_children():
+            self.lista_monstros.delete(item)
         for nome in sorted(self.monstros):
-            saque = "$ " if self.loot_flags.get(nome, True) else "  "
+            caixa = "x" if self.loot_flags.get(nome, True) else ""
             marca = "" if self.monstros[nome] is not None else "  (sem sprite)"
-            self.lista_monstros.insert("end", saque + nome + marca)
+            self.lista_monstros.insert("", "end", iid=nome,
+                                       values=(caixa, nome + marca))
         # o recado sai daqui para valer em TODA acao (aprender, renomear,
         # remover) e nao so ao cadastrar. Na montagem do painel o rotulo ainda
         # nao existe.
@@ -884,7 +896,7 @@ class Painel:
                           f"{'...' if len(pendentes) > 3 else ''}): esses NAO sao "
                           f"atacados. Engaje o bicho e use '2. Pegar o sprite'")
             elif so_marcados and sem_saque:
-                recado = (f"saqueando so os marcados com $; fora: "
+                recado = (f"saqueando so os marcados na coluna $; fora: "
                           f"{', '.join(sem_saque[:4])}"
                           f"{'...' if len(sem_saque) > 4 else ''}")
             elif sem_saque and not so_marcados:
@@ -895,13 +907,28 @@ class Painel:
                 recado = ""
         self.lbl_monstro.config(text=recado)
 
+    def _clique_na_lista(self, evento):
+        """
+        Clique na coluna da caixa alterna o saque; no resto, so seleciona.
+
+        E o gesto que se espera de uma caixa de marcar. Antes era selecionar na
+        lista e clicar num botao separado - duas etapas para uma decisao de um
+        clique. O identificador da linha E o nome do monstro, entao nao ha
+        texto para desmontar.
+        """
+        if self.lista_monstros.identify_region(evento.x, evento.y) != "cell":
+            return
+        if self.lista_monstros.identify_column(evento.x) != "#1":
+            return
+        nome = self.lista_monstros.identify_row(evento.y)
+        if nome:
+            self.alterna_loot(nome)
+            return "break"          # nao deixa o clique virar arraste de coluna
+
     def _nome_selecionado(self):
-        sel = self.lista_monstros.curselection()
-        if not sel:
-            return None
-        texto = self.lista_monstros.get(sel[0])
-        # tira o prefixo do saque ("$ " ou dois espacos) e o aviso do sprite
-        return texto[2:].split("  (sem sprite)")[0]
+        # o iid da linha E o nome: nada de desmontar texto com prefixo e aviso
+        sel = self.lista_monstros.selection()
+        return sel[0] if sel else None
 
     # ------------------------------------------------------------- config
     def coletar(self):
@@ -1123,9 +1150,9 @@ class Painel:
         self.nome_monstro.set("")
         self._recarrega_monstros()
 
-    def alterna_loot(self):
-        """Liga/desliga o saque do monstro escolhido, e grava."""
-        nome = self._nome_selecionado()
+    def alterna_loot(self, nome=None):
+        """Liga/desliga o saque de um monstro, e grava."""
+        nome = nome or self._nome_selecionado()
         if not nome:
             self.escreve_log("[gui] escolha um monstro da lista")
             return

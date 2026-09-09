@@ -223,9 +223,16 @@ Não pegou nada na caçada? Dois diagnósticos, para perguntas diferentes:
 ### Saquear só alguns monstros
 
 **Atacar e saquear são escolhas separadas.** O bot continua atacando o que sempre
-atacou; a lista de monstros (aba Combate) diz de quem vale pegar o corpo. O `$`
-na frente do nome marca quem entra no saque, e o botão *Saquear: sim/não*
-alterna. `LOOT_SO_MARCADOS` liga o filtro.
+atacou; a lista de monstros (aba Combate) diz de quem vale pegar o corpo:
+**clique na coluna `$`** para marcar ou desmarcar. `LOOT_SO_MARCADOS` — a
+caixinha *saquear só os marcados* — liga o filtro.
+
+A lista é um `Treeview` e não um `Listbox` justamente por causa disso: `Listbox`
+não tem coluna, então a escolha virava um `$` no meio do texto mais um botão
+separado para alternar o selecionado — duas etapas para uma decisão de um
+clique, e um símbolo a explicar. Com coluna, o clique sabe onde caiu e a caixa
+alterna sozinha. Clicar no **nome** não alterna nada: escolher um monstro para
+renomear não pode mudar o saque dele sem querer.
 
 Isso importa em dois casos concretos: a caverna tem bicho de loot bom e bicho que
 só dá lixo, e cada corpo custa uma parada (e, se estiver longe, uma caminhada); e
