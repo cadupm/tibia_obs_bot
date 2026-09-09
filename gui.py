@@ -251,6 +251,7 @@ class Painel:
         self.thread_bot = None
         self.parar_status = threading.Event()
         self.monstros = main.load_monsters()
+        self.loot_flags = main.load_loot_flags()   # de quem pegar o corpo
 
         raiz.title("Cave bot")
         raiz.attributes("-topmost", True)
@@ -738,6 +739,13 @@ class Painel:
                     textvariable=self.linha_battle).grid(row=0, column=0)
         ttk.Button(canto, text="Remover", width=8,
                    command=self.remover_monstro).grid(row=0, column=1, padx=(3, 0))
+        ttk.Button(acoes, text="Saquear: sim/nao", width=16,
+                   command=self.alterna_loot).grid(row=2, column=0, pady=1)
+        var_so = tk.BooleanVar()
+        ttk.Checkbutton(acoes, text="so os marcados", variable=var_so,
+                        command=self._atualiza_habilitacao).grid(
+            row=2, column=1, padx=(4, 0), sticky="w")
+        self.vars["LOOT_SO_MARCADOS"] = (var_so, bool)
 
         # O RECADO FICA AQUI, e nao so no log: o log e de poucas linhas e a
         # explicacao rolava para fora antes de ser lida.
@@ -752,7 +760,9 @@ class Painel:
                   text="Duas etapas: (1) cadastra o nome, (2) com o bicho "
                        "ENGAJADO no jogo, pega o sprite da linha escolhida da "
                        "battle list. So o sprite reconhece - nome sozinho nao "
-                       "filtra nada, porque a leitura e de pixel."
+                       "filtra nada, porque a leitura e de pixel. O '$' diz de "
+                       "quem o bot pega o corpo: atacar e saquear sao escolhas "
+                       "separadas."
                   ).grid(row=7, column=0, columnspan=3, sticky="w", padx=6,
                          pady=(2, 4))
         self._dica_monstro()
@@ -834,10 +844,19 @@ class Painel:
         self.lbl_filtro.config(text=texto, foreground=cor)
 
     def _recarrega_monstros(self):
+        """
+        A lista, com duas informacoes por linha.
+
+        ATACAR e SAQUEAR sao escolhas separadas: '$' e de quem o bot pega o
+        corpo, '(sem sprite)' e quem ainda nao da para reconhecer. Um monstro
+        pode ser atacado e nao saqueado - e o pedido: atacar tudo, saquear so
+        alguns.
+        """
         self.lista_monstros.delete(0, "end")
         for nome in sorted(self.monstros):
+            saque = "$ " if self.loot_flags.get(nome, True) else "  "
             marca = "" if self.monstros[nome] is not None else "  (sem sprite)"
-            self.lista_monstros.insert("end", nome + marca)
+            self.lista_monstros.insert("end", saque + nome + marca)
         # o recado sai daqui para valer em TODA acao (aprender, renomear,
         # remover) e nao so ao cadastrar. Na montagem do painel o rotulo ainda
         # nao existe.
@@ -852,6 +871,10 @@ class Painel:
         log - onde some. Aqui ela fica na tela ate deixar de ser verdade.
         """
         if recado is None:
+            so_marcados = bool(self.vars["LOOT_SO_MARCADOS"][0].get()) \
+                if "LOOT_SO_MARCADOS" in self.vars else False
+            sem_saque = [n for n in self.monstros
+                         if not self.loot_flags.get(n, True)]
             pendentes = [n for n, sp in self.monstros.items() if sp is None]
             if not self.monstros:
                 recado = ("lista vazia: cadastre o nome e depois pegue o sprite "
@@ -860,6 +883,14 @@ class Painel:
                 recado = (f"{len(pendentes)} sem sprite ({', '.join(pendentes[:3])}"
                           f"{'...' if len(pendentes) > 3 else ''}): esses NAO sao "
                           f"atacados. Engaje o bicho e use '2. Pegar o sprite'")
+            elif so_marcados and sem_saque:
+                recado = (f"saqueando so os marcados com $; fora: "
+                          f"{', '.join(sem_saque[:4])}"
+                          f"{'...' if len(sem_saque) > 4 else ''}")
+            elif sem_saque and not so_marcados:
+                recado = (f"{len(sem_saque)} desmarcado(s) para saque, mas "
+                          f"'so os marcados' esta desligado: o bot saqueia "
+                          f"todos")
             else:
                 recado = ""
         self.lbl_monstro.config(text=recado)
@@ -868,7 +899,9 @@ class Painel:
         sel = self.lista_monstros.curselection()
         if not sel:
             return None
-        return self.lista_monstros.get(sel[0]).split("  (sem sprite)")[0]
+        texto = self.lista_monstros.get(sel[0])
+        # tira o prefixo do saque ("$ " ou dois espacos) e o aviso do sprite
+        return texto[2:].split("  (sem sprite)")[0]
 
     # ------------------------------------------------------------- config
     def coletar(self):
@@ -1088,6 +1121,25 @@ class Painel:
         finally:
             sys.stdout = saida
         self.nome_monstro.set("")
+        self._recarrega_monstros()
+
+    def alterna_loot(self):
+        """Liga/desliga o saque do monstro escolhido, e grava."""
+        nome = self._nome_selecionado()
+        if not nome:
+            self.escreve_log("[gui] escolha um monstro da lista")
+            return
+        agora = not self.loot_flags.get(nome, True)
+        self.loot_flags[nome] = agora
+        saida = sys.stdout
+        sys.stdout = FilaDeSaida(self.fila_log, saida)
+        try:
+            main.save_monsters(self.monstros, loot=self.loot_flags)
+        finally:
+            sys.stdout = saida
+        self.escreve_log(f"[gui] '{nome}': "
+                         + ("saquear o corpo" if agora
+                            else "NAO saquear o corpo"))
         self._recarrega_monstros()
 
     def remover_monstro(self):

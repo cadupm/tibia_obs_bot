@@ -220,6 +220,35 @@ Não pegou nada na caçada? Dois diagnósticos, para perguntas diferentes:
 - `python main.py --loot` confere o **clique**, com um corpo do lado: botão,
   geometria da tela, e como ler cada resultado.
 
+### Saquear só alguns monstros
+
+**Atacar e saquear são escolhas separadas.** O bot continua atacando o que sempre
+atacou; a lista de monstros (aba Combate) diz de quem vale pegar o corpo. O `$`
+na frente do nome marca quem entra no saque, e o botão *Saquear: sim/não*
+alterna. `LOOT_SO_MARCADOS` liga o filtro.
+
+Isso importa em dois casos concretos: a caverna tem bicho de loot bom e bicho que
+só dá lixo, e cada corpo custa uma parada (e, se estiver longe, uma caminhada); e
+com o auto-aprendizado ligado **todo** bicho novo entra na lista, virando mais
+uma viagem.
+
+Como o bot sabe quem morreu: a trava de alvo guarda o **sprite** do bicho que
+sumiu da battle list, e `monstros.json` liga sprite a nome — o mesmo critério de
+igualdade do resto (diferença média **ou** correlação), que é o que aguenta o
+sprite escurecido do bicho quase morto.
+
+Duas decisões de borda, ambas para não tirar nada de quem não pediu:
+
+- **filtro desligado saqueia todos**, e é o padrão;
+- o `monstros.json` aceita as **duas formas** — `"Bonelord": [[...]]` (só o
+  sprite, vale como "saqueia") e `{"sprite": [...], "loot": false}`. Lista
+  escrita antes de existir esse interruptor continua saqueando tudo. E salvar a
+  lista por outro motivo (aprender um sprite, renomear) **preserva** as escolhas:
+  não pode religar o loot de ninguém pelas costas.
+
+Com o filtro ligado, **bicho não reconhecido fica de fora** — marcar só faz
+sentido se o que não foi marcado ficar de fora.
+
 **Limitação conhecida:** com vários bichos na tela, o palpite inicial é o do mais
 perto na leitura em que a lista ainda o tinha. A identificação na tela corrige o
 palpite errado; com dois bichos morrendo ao mesmo tempo em quadrados diferentes
@@ -484,6 +513,14 @@ O código está comentado com o *porquê* de cada uma delas.
   procurava o corpo só no quadrado do palpite, justamente o erro que a busca
   existe para corrigir. Um teste guarda a distinção; o resto foi removido.
 
+- **Um fixture indistinguível não testa distinção.** O teste do saque seletivo
+  usava sprites que diferiam só num quadradinho de 5×5 sobre fundo igual: a
+  diferença média entre dois deles dava **8,3**, abaixo de `MONSTER_DIFF_MAX`
+  (12). Para o bot eram **o mesmo bicho** — e ele estava certo, porque as imagens
+  eram quase iguais. O filtro "não funcionava" e a culpa era do fixture. Agora
+  cada bicho do teste é ruído próprio, e o arquivo começa com um `assert` de que
+  eles são distinguíveis.
+
 - **Tentativa e erro é sinal de que falta um sinal.** O bot varria os 9
   quadrados em volta do corpo porque a posição vinha de odometria e errava por
   1 SQM. A pergunta certa não era "como varrer melhor" e sim "o que na tela diz
@@ -649,6 +686,7 @@ python testes/testa_loot_modos.py     # o mesmo saque em stand/chase/kite, com e
 python testes/testa_acha_corpo.py     # acha o quadrado do corpo na tela, e admite quando não dá
 python testes/testa_loot_grupo.py     # três bichos: grava os três corpos, recolhe depois da briga
 python testes/testa_loot_fugitivo.py  # bicho que fugiu da tela não trava o saque do que morreu
+python testes/testa_loot_escolhido.py # ataca todos, saqueia só os escolhidos
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI

@@ -332,6 +332,16 @@ LOOT_ANTES_HP_MIN = 0.5         # fracao da vida abaixo da qual o saque NAO
                                 # segura o ataque: apanhando, revidar vem
                                 # primeiro.
 
+LOOT_SO_MARCADOS = False        # saquear so os monstros marcados na lista.
+                                # ATACAR E SAQUEAR sao escolhas separadas: o
+                                # bot continua atacando o que sempre atacou.
+                                # Desligado, saqueia todo bicho que morrer;
+                                # ligado, so os marcados - o que vale para quem
+                                # cava lugar com bicho de loot bom e bicho que
+                                # so da lixo, e para quem usa o
+                                # auto-aprendizado, que cadastra todo bicho
+                                # novo que aparece.
+
 LOOT_MAX_CORPOS = 4             # corpos na fila de saque. Guardar UM so deixava
                                 # no chao todo bicho da briga menos o ultimo -
                                 # numa caverna se mata em grupo.
@@ -2479,6 +2489,20 @@ def passos_proibidos(img, lugares):
     return proibidos
 
 
+def _cru_dos_monstros(caminho=None):
+    """O json da lista, ou {} se nao existir."""
+    caminho = caminho or MONSTERS_FILE
+    if not os.path.exists(caminho):
+        return {}
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            cru = json.load(f)
+    except (OSError, ValueError) as erro:
+        print(f"[monstros] {caminho} ilegivel ({erro})")
+        return {}
+    return cru if isinstance(cru, dict) else {}
+
+
 def load_monsters(caminho=None):
     """
     Le a lista de monstros: {nome: sprite ou None}.
@@ -2486,23 +2510,53 @@ def load_monsters(caminho=None):
     Nome com None e um cadastro PENDENTE: existe na lista mas ainda nao tem
     sprite, entao nao reconhece nada. Serve para montar a lista antes de
     encontrar o bicho, e depois ligar o sprite quando ele aparecer.
+
+    O arquivo aceita DUAS formas por monstro, para nao invalidar lista antiga:
+    so o sprite (`"Bonelord": [[...]]`) ou um objeto com o sprite e as opcoes
+    dele (`{"sprite": [[...]], "loot": false}`). Esta funcao devolve so os
+    sprites; as opcoes saem em load_loot_flags.
+    """
+    saida = {}
+    for nome, valor in _cru_dos_monstros(caminho).items():
+        px = valor.get("sprite") if isinstance(valor, dict) else valor
+        saida[nome] = np.array(px, dtype=np.uint8) if px else None
+    return saida
+
+
+def load_loot_flags(caminho=None):
+    """
+    Quais monstros saquear: {nome: True/False}.
+
+    Ausente do arquivo significa SIM. Lista antiga, escrita antes de existir
+    este interruptor, continua saqueando tudo: quem nao pediu nada nao pode
+    perder loot por causa de um campo novo.
+    """
+    return {nome: (bool(valor.get("loot", True))
+                   if isinstance(valor, dict) else True)
+            for nome, valor in _cru_dos_monstros(caminho).items()}
+
+
+def save_monsters(monstros, caminho=None, loot=None):
+    """
+    Grava a lista.
+
+    `loot` e o mapa {nome: saquear?}. Ausente, o que ja esta no arquivo e
+    PRESERVADO: salvar a lista por outro motivo - aprender um sprite, renomear -
+    nao pode apagar a escolha de loot de ninguem.
     """
     caminho = caminho or MONSTERS_FILE
-    if not os.path.exists(caminho):
-        return {}
-    with open(caminho, encoding="utf-8") as f:
-        cru = json.load(f)
-    return {nome: (np.array(px, dtype=np.uint8) if px else None)
-            for nome, px in cru.items()}
-
-
-def save_monsters(monstros, caminho=None):
-    caminho = caminho or MONSTERS_FILE
+    flags = dict(load_loot_flags(caminho))
+    if loot:
+        flags.update(loot)
     with open(caminho, "w", encoding="utf-8") as f:
-        json.dump({nome: (arr.tolist() if arr is not None else None)
+        json.dump({nome: {"sprite": (arr.tolist() if arr is not None else None),
+                          "loot": bool(flags.get(nome, True))}
                    for nome, arr in monstros.items()}, f)
     prontos = sum(1 for a in monstros.values() if a is not None)
-    print(f"[monstros] {len(monstros)} na lista ({prontos} com sprite) em {caminho}")
+    sem_loot = [n for n in monstros if not flags.get(n, True)]
+    print(f"[monstros] {len(monstros)} na lista ({prontos} com sprite) em "
+          f"{caminho}"
+          + (f"; sem loot: {', '.join(sem_loot)}" if sem_loot else ""))
 
 
 def add_monster_name(nome, monstros=None):
@@ -2563,6 +2617,44 @@ def sprite_igual(a, b):
     if escala < 1e-6:                      # sprite chapado: nada a correlacionar
         return False
     return float((x * y).sum() / escala) >= MONSTER_CORR_MIN
+
+
+def nome_do_sprite(sprite, monstros):
+    """
+    O nome do monstro cujo sprite casa com este, ou None.
+
+    E como o bot sabe QUEM morreu: a trava de alvo guarda o sprite do bicho que
+    sumiu da lista, e aqui ele vira nome - que e o que tem interruptor de loot.
+    Usa o mesmo criterio de igualdade do resto (diferenca media OU correlacao),
+    que e o que aguenta o sprite escurecido do bicho quase morto.
+    """
+    if sprite is None:
+        return None
+    for nome, conhecido in monstros.items():
+        if conhecido is not None and sprite_igual(conhecido, sprite):
+            return nome
+    return None
+
+
+def vale_saquear(sprite, monstros, flags):
+    """
+    Este bicho entra no saque?
+
+    Com LOOT_SO_MARCADOS desligado, todos entram - e o padrao, e nao muda nada
+    para quem nao pediu nada.
+
+    Ligado, entra quem esta marcado na lista, e bicho NAO RECONHECIDO fica de
+    fora: marcar so faz sentido se o que nao foi marcado ficar de fora. Isso e
+    independente de atacar - o bot continua atacando o que sempre atacou.
+
+    Devolve (entra?, nome ou None).
+    """
+    nome = nome_do_sprite(sprite, monstros)
+    if not LOOT_SO_MARCADOS:
+        return True, nome
+    if nome is None:
+        return False, None
+    return bool(flags.get(nome, True)), nome
 
 
 def monstros_atacaveis(sprites, monstros, filtrar=None):
@@ -2803,6 +2895,9 @@ class TravaDeAlvo:
         self.avisou = False
         self.sumidas = 0
         self.morreu = False               # um bicho saiu da lista: o loot le
+        self.morto_sprite = None          # o sprite de QUEM morreu: e por ele
+                                          # que se descobre o nome, e o nome e
+                                          # que tem interruptor de loot
         self.mortos = 0                   # QUANTOS sairam: duas entradas podem
                                           # sumir na mesma leitura, e ai sao
                                           # dois corpos, nao um
@@ -2840,6 +2935,7 @@ class TravaDeAlvo:
                              " (a moldura ja passou para o proximo)"))
                     self.morreu = True     # o loot le isto e busca o corpo
                     self.mortos = quantos
+                    self.morto_sprite = self.sprite
                     self.iguais = iguais_agora
                     self.sumidas = 0
                     if not alvo:
@@ -4524,6 +4620,7 @@ def run_bot():
     spell_cd = Cooldown(SPELL_COOLDOWN, 0.15)
     sem_alvo = 0
     monstros = load_monsters()
+    loot_flags = load_loot_flags()      # de quem vale pegar o corpo
     evitar_lugares = load_evitar() if ATTACK_MODE == "kite" else {}
     odo_kite = None                    # odometro proprio do kite: ele roda com
                                        # a rota desligada, onde nao ha odo
@@ -4643,6 +4740,8 @@ def run_bot():
             # 3) combo: engaja quem estiver sem alvo, e conjura no alvo engajado
             entradas, alvo, alvo_hp, sprites, alvo_sprite = battle_state(leitura)
             monstros, aprendido = auto_learn(alvo_sprite, monstros)
+            if aprendido:
+                loot_flags = load_loot_flags()   # o novo entrou no arquivo
 
             # filtro ligado com a lista vazia + auto-aprendizado seria um impasse:
             # nao ataca porque nao conhece, e nao conhece porque nunca ataca. Nesse
@@ -4686,7 +4785,20 @@ def run_bot():
                 trava.morreu = False
                 mortos_agora = max(getattr(trava, "mortos", 1), 1)
                 trava.mortos = 0
-                historico = caminho.get("bichos_vistos") or []
+                # QUEM MORREU decide se ha o que saquear. Atacar e saquear sao
+                # escolhas separadas: o bot ataca o que sempre atacou, e a
+                # lista de monstros diz de quem vale pegar o corpo. Sem isso,
+                # com o auto-aprendizado ligado, todo bicho novo que aparece
+                # entra na lista e vira uma viagem ate o corpo.
+                quero, quem = vale_saquear(trava.morto_sprite, monstros,
+                                           loot_flags)
+                trava.morto_sprite = None
+                if not quero:
+                    print(f"[loot] "
+                          + (f"'{quem}'" if quem else "bicho nao reconhecido")
+                          + " nao esta marcado para saque; ignoro o corpo")
+                    caminho["bichos_vistos"] = []
+                historico = (caminho.get("bichos_vistos") or []) if quero else []
                 if historico:
                     # O QUADRO DE ANTES DA MORTE, e nao o mais recente. A morte
                     # so e confirmada TARGET_GONE_READS leituras depois de a
