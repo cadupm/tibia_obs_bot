@@ -562,11 +562,22 @@ KITE_DIAGONAIS = False          # As diagonais do teclado numerico NAO moveram o
 
 # O VIEWPORT do jogo, em offsets de cliente, e o tamanho do quadrado na tela.
 #
-# MEDIDO, e nao estimado de olho. O tamanho do quadrado saiu de um passo do
-# personagem: ele fica sempre no meio da tela, entao andar um quadrado rola a
-# cena inteira em exatamente um quadrado. No cliente 1920x1009 do usuario deu
-# 64 px, com o passo de volta fechando em 0 px de diferenca. A area de jogo vai
-# de x 250 a 1209 e de y 61 a 764 - 960 x 704, que e 15 x 11 quadrados de 64.
+# MEDIDO, e nao estimado de olho. Duas medidas independentes:
+#
+#   TAMANHO: um passo do personagem rola a cena inteira em 64 px. Ele fica
+#   sempre no meio da tela, entao andar um quadrado desloca o mundo por um
+#   quadrado; o passo de volta fechou em 0 px de diferenca.
+#
+#   ORIGEM: a MOLDURA VERMELHA do bicho atacado. Ela e o unico desenho da tela
+#   que o cliente alinha ao quadrado, entao ela DEFINE a grade. Medida num
+#   quadro real: RGB (190,62,62), 4 px de espessura, 64 px de lado, canto em
+#   (484,173) da area de cliente. Logo as bordas ficam em x = 484 mod 64 e
+#   y = 173 mod 64, o que poe a origem em (228,45) - e com ela o personagem
+#   cai exatamente na coluna 7, linha 5, como tem de ser.
+#
+# A origem ja esteve em (250,61), estimada pela textura da tela: 22 px e 16 px
+# fora, um terco de quadrado. Estimar pela textura depende do que esta desenhado
+# na hora - um trecho liso na beirada e a medida anda.
 #
 # Ja esteve (221, 61, 1020, 748) com 68 px, estimado pela textura da tela, e o
 # estrago era proporcional a distancia: 4 px de erro por quadrado. Ao lado do
@@ -575,7 +586,7 @@ KITE_DIAGONAIS = False          # As diagonais do teclado numerico NAO moveram o
 # nao looteia, as vezes erra o clique e looteia outro".
 #
 # Confira no seu layout com "python main.py --grade", que mede os dois.
-GAME_VIEW = (250, 61, 15 * 64, 11 * 64)
+GAME_VIEW = (228, 45, 15 * 64, 11 * 64)
 TILE_PX = 64                    # px por SQM na tela do jogo
 # A barrinha de vida sobre a criatura, medida na captura da cave: moldura de
 # preto puro com 31 px de largura e 4 de altura, com 2 linhas de preenchimento
@@ -3229,6 +3240,80 @@ def confere_a_grade(leitura):
           f"'python main.py --grade'.")
 
 
+ALVO_COR = (190, 62, 62)        # a moldura do bicho atacado, medida na tela
+ALVO_TOLERANCIA = 28            # quanto cada canal pode variar
+ALVO_GROSSURA = 4               # px de espessura da moldura
+
+
+def acha_moldura_do_alvo(img):
+    """
+    Em que quadrado esta a moldura vermelha do bicho atacado, ou None.
+
+    O cliente desenha essa moldura ALINHADA AO QUADRADO - e a unica coisa na
+    tela que esta -, entao ela nao precisa de constante de calibracao nenhuma:
+    o canto dela E o canto do quadrado.
+
+    A cor e especifica: (190,62,62). Sangue no chao e (200,0,0), com verde e
+    azul em zero, e por isso nao passa - a exigencia de que os TRES canais
+    fiquem perto do valor medido e o que separa moldura de poca de sangue,
+    numa caverna onde 16% da tela e avermelhada.
+
+    Devolve o offset (dx, dy) em SQM a partir do personagem.
+    """
+    vx, vy, vw, vh = GAME_VIEW
+    r = img[:, :, 0].astype(np.int16)
+    g = img[:, :, 1].astype(np.int16)
+    b = img[:, :, 2].astype(np.int16)
+    tol = ALVO_TOLERANCIA
+    cor = ((np.abs(r - ALVO_COR[0]) <= tol) & (np.abs(g - ALVO_COR[1]) <= tol)
+           & (np.abs(b - ALVO_COR[2]) <= tol))
+    if not cor.any():
+        return None
+
+    # uma linha horizontal do tamanho de um quadrado e o topo (ou a base) dela
+    lado = TILE_PX
+    minimo = lado - 6
+    alt, larg = cor.shape
+    if larg < minimo:
+        return None
+    soma = np.cumsum(cor, axis=1)
+    jan = np.zeros_like(soma)
+    jan[:, 0] = soma[:, minimo - 1]
+    jan[:, 1:larg - minimo + 1] = soma[:, minimo:] - soma[:, :-minimo]
+    ys, xs = np.where(jan >= minimo - 2)
+    if not len(ys):
+        return None
+
+    # AS QUATRO PAREDES, e nenhuma delas exigida inteira: a sprite do bicho e
+    # desenhada POR CIMA da moldura e come pedacos dela. Medido no quadro real,
+    # a linha de baixo tinha 46 px continuos de 64 - exigir a linha inteira
+    # rejeitava a moldura de verdade. O que se cobra e o total de pixel da cor
+    # em cada parede, que aguenta buraco no meio.
+    meio_col, meio_lin = (vw // TILE_PX) // 2, (vh // TILE_PX) // 2
+    vistos = set()
+    for y, x in zip(ys, xs):
+        if (y, x // lado) in vistos:
+            continue
+        vistos.add((y, x // lado))
+        if y + lado > alt or x + lado > larg:
+            continue
+        caixa = cor[y:y + lado, x:x + lado]
+        gr = ALVO_GROSSURA
+        if (caixa[:gr].sum() < lado - 6 or caixa[-gr:].sum() < lado * 0.6
+                or caixa[:, :gr].sum() < lado * 0.6
+                or caixa[:, -gr:].sum() < lado * 0.6):
+            continue
+        # o canto exato: o primeiro pixel da cor na linha de cima
+        dentro = np.where(caixa[0])[0]
+        esquerda = x + int(dentro[0]) if len(dentro) else x
+        col = (esquerda + lado // 2) // lado
+        lin = (y + lado // 2) // lado
+        offset = (int(col) - meio_col, int(lin) - meio_lin)
+        if dentro_da_tela(offset):
+            return offset
+    return None
+
+
 def viewport(leitura):
     """A imagem da area do jogo. Uma captura, para quem precisa dela inteira."""
     vx, vy, vw, vh = GAME_VIEW
@@ -5355,9 +5440,37 @@ def run_bot():
                 # esta na propria leitura - quantas entradas sairam da lista,
                 # quantas barras novas apareceram e onde - em vez de tratar
                 # tudo como corpo.
+                # A CONTAGEM DE LEITURAS PRIMEIRO: tudo aqui embaixo carimba
+                # o numero da leitura em que aconteceu, e comparar carimbos de
+                # antes e depois do incremento erra por um - foi assim que a
+                # moldura "que pulou nesta leitura" passou a parecer velha, e o
+                # corpo era marcado em cima do bicho vivo.
+                leitura_n = caminho["leituras"] = caminho.get("leituras", 0) + 1
                 tela_agora = viewport(leitura)
                 agora_barras = detect_creatures(leitura, img=tela_agora)
                 calibra_a_barra()          # a barra do personagem tem de dar 0
+                # ONDE ESTA A MOLDURA DO ALVO. Guardada em coordenada de mundo
+                # a cada leitura: quando o bicho morrer, o ULTIMO lugar em que
+                # ela apareceu e o quadrado do corpo - alinhado ao quadrado
+                # pelo proprio cliente, sem constante para calibrar e sem a
+                # ambiguidade de "qual das barras sumiu".
+                onde_alvo = acha_moldura_do_alvo(tela_agora)
+                if onde_alvo is not None and odo_agora:
+                    lugar = (round(odo_agora.pos[0]
+                                   + onde_alvo[0] * MINIMAP_PX_SQM),
+                             round(odo_agora.pos[1]
+                                   + onde_alvo[1] * MINIMAP_PX_SQM))
+                    atual = caminho.get("alvo_mundo")
+                    if atual is None or atual[0] != lugar:
+                        # A MOLDURA PULA PARA O PROXIMO BICHO NA MESMA LEITURA
+                        # em que o atacado morre - o cliente re-engaja sozinho.
+                        # Guardar so a posicao de agora marcaria o corpo em
+                        # cima do bicho VIVO. Entao a anterior fica guardada, e
+                        # e ela que vale quando a morte fecha nesta leitura.
+                        caminho["alvo_antes"] = atual
+                        caminho["alvo_pulou"] = caminho.get("leituras", 0)
+                    caminho["alvo_mundo"] = (lugar,
+                                             caminho.get("leituras", 0))
                 # O PRIMEIRO QUADRO COM ALVO da sessao, cru. E nele que se ve a
                 # moldura vermelha que o cliente desenha no bicho atacado - o
                 # unico desenho da tela que e ALINHADO AO QUADRADO, e por isso
@@ -5384,7 +5497,6 @@ def run_bot():
                      round(odo_agora.pos[1] + q[1] * MINIMAP_PX_SQM))
                     for q in agora_barras} if odo_agora else set()
                 antes_barras = caminho.get("barras_mundo")
-                leitura_n = caminho["leituras"] = caminho.get("leituras", 0) + 1
                 if antes_barras is not None:
                     # A ENTRADA SO VALE ENQUANTO E RECENTE. A morte e
                     # confirmada ate TARGET_GONE_READS leituras depois, entao a
@@ -5475,16 +5587,48 @@ def run_bot():
                 # Ficava dentro do `if historico:` junto com a comparacao de
                 # imagem, e com historia vazia nenhum corpo era marcado mesmo
                 # havendo posicao exata guardada.
+                # A MOLDURA DO ALVO VEM PRIMEIRO. Ela marca o bicho que
+                # estava sendo atacado - ou seja, o que morreu - e e alinhada
+                # ao quadrado pelo cliente. A barra que sumiu so diz "alguma
+                # barra sumiu": com varios bichos colados, o passo de um
+                # explica o sumico do outro e nao da para saber qual foi, e o
+                # bot desiste do corpo para nao chutar. A moldura nao tem esse
+                # problema, e vale igual com um bicho ou com cinco.
+                marca = caminho.get("alvo_mundo") if quero else None
+                if (marca is not None
+                        and caminho.get("alvo_pulou") == caminho.get(
+                            "leituras", 0)):
+                    marca = caminho.get("alvo_antes")   # ela ja pulou: vale a
+                    #                                     de antes do pulo
+                fresca = (marca is not None and odo_agora is not None
+                          and caminho.get("leituras", 0) - marca[1]
+                          <= TARGET_GONE_READS + 2)
+                quadrados = []
+                if fresca:
+                    quadrados.append(
+                        (round((marca[0][0] - odo_agora.pos[0])
+                               / MINIMAP_PX_SQM),
+                         round((marca[0][1] - odo_agora.pos[1])
+                               / MINIMAP_PX_SQM)))
+                    caminho["alvo_mundo"] = caminho["alvo_antes"] = None
+                    print(f"[loot] a moldura do alvo estava em {quadrados[0]} "
+                          f"na ultima leitura em que ele existia: e ali que "
+                          f"ele caiu")
                 anotados = (caminho.get("sumiram") or []) if quero else []
-                if anotados and odo_agora:
-                    usa = anotados[-max(mortos_agora, 1):]
-                    quadrados = [
+                # as outras mortes da mesma leitura, se houver, ainda saem da
+                # barra que sumiu: a moldura so marca um bicho por vez
+                faltam = max(mortos_agora - len(quadrados), 0)
+                if anotados and odo_agora and faltam:
+                    usa = anotados[-faltam:]
+                    outros = [
                         (round((lugar[0] - odo_agora.pos[0]) / MINIMAP_PX_SQM),
                          round((lugar[1] - odo_agora.pos[1]) / MINIMAP_PX_SQM))
                         for lugar, _t, _n in usa]
                     del caminho["sumiram"][-len(usa):]
                     print(f"[loot] {mortos_agora} morte(s); a barra de vida "
-                          f"sumiu em {quadrados}: e ali que os corpos estao")
+                          f"sumiu em {outros}: e ali que os corpos estao")
+                    quadrados += [q for q in outros if q not in quadrados]
+                if quadrados:
                     foto_da_morte(tela_agora, quadrados)
                     for quadrado_corpo in quadrados:
                         marca_o_corpo(caminho, quadrado_corpo, odo_agora,

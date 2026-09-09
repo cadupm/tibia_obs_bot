@@ -101,7 +101,25 @@ def barra(img, off):
     return img
 
 
-def tela(vivos, corpos):
+def moldura_do_alvo(img, off):
+    """A moldura vermelha que o cliente desenha no bicho atacado.
+
+    Medida na tela de verdade: RGB (190,62,62), 4 px de espessura, alinhada ao
+    quadrado. E o unico desenho do cliente que respeita a grade, e por isso o
+    localizador do corpo.
+    """
+    x0 = (MEIO_COL + off[0]) * main.TILE_PX
+    y0 = (MEIO_LIN + off[1]) * main.TILE_PX
+    t, g = main.TILE_PX, main.ALVO_GROSSURA
+    if 0 <= y0 < VH - t and 0 <= x0 < VW - t:
+        img[y0:y0 + g, x0:x0 + t] = main.ALVO_COR
+        img[y0 + t - g:y0 + t, x0:x0 + t] = main.ALVO_COR
+        img[y0:y0 + t, x0:x0 + g] = main.ALVO_COR
+        img[y0:y0 + t, x0 + t - g:x0 + t] = main.ALVO_COR
+    return img
+
+
+def tela(vivos, corpos, alvo=None):
     """Vivos de pe com barra; corpos como cadaver, SEM barra e SEM nome."""
     img = CHAO.copy()
     for off in corpos:
@@ -109,6 +127,8 @@ def tela(vivos, corpos):
     for off in vivos.values():
         desenha(img, off, (170, 40, 40))
         barra(img, off)
+    if alvo is not None and alvo in vivos:
+        moldura_do_alvo(img, vivos[alvo])
     return img
 
 
@@ -201,7 +221,7 @@ class OdoFalso:
 
 def roda(arranjo, mexe_na_morte=False, autotarget=True):
     quadros, mortes = monta_quadros(arranjo, mexe_na_morte, autotarget)
-    telas = [tela(v, c) for v, c, _l, _a in quadros]
+    telas = [tela(v, c, a) for v, c, _l, a in quadros]
     roteiro = [(len(lista), alvo is not None,
                 0.9 if alvo is not None else None,
                 [SPRITES[i] for i in lista],
@@ -266,7 +286,11 @@ def roda(arranjo, mexe_na_morte=False, autotarget=True):
 
     marcados = []
     for linha in log.splitlines():
-        if "a barra de vida sumiu em [" in linha:
+        if "a moldura do alvo estava em (" in linha:
+            miolo = linha.split("estava em (")[1].split(")")[0]
+            x, y = (int(v) for v in miolo.split(","))
+            marcados.append((x, y))
+        elif "a barra de vida sumiu em [" in linha:
             miolo = linha.split("sumiu em [")[1].split("]")[0]
             for par in miolo.replace("(", "").split("),"):
                 par = par.replace(")", "").strip()
@@ -376,13 +400,15 @@ if inventados:
 if amb["andadas"]:
     falhas.append(f"ambiguo: {len(amb['andadas'])} clique(s) de andar atras de "
                   f"corpo que nao existe")
-if not disse:
-    falhas.append("ambiguo: nao disse no log que nao dava para decidir - o "
-                  "silencio aqui e indistinguivel de nao ter detectado a morte")
-if len(set(amb["marcados"])) != 2:
+
+# COM A MOLDURA, A LEITURA AMBIGUA DEIXA DE SER AMBIGUA. Ela marca QUAL bicho
+# esta sendo atacado, e o que morre e esse - nao ha o que confundir com o passo
+# de um vizinho. Antes de existir, esta morte se perdia.
+if len(set(amb["marcados"])) != 3:
     falhas.append(f"ambiguo: marcou {len(set(amb['marcados']))} corpo(s), "
-                  f"esperava 2 - so a morte confusa se perde, as outras duas "
-                  f"acontecem em leitura limpa")
+                  f"esperava 3. A moldura do alvo diz qual bicho morreu, "
+                  f"entao o passo de um vizinho na mesma leitura nao confunde "
+                  f"mais nada")
 
 print("\nVEREDITO:", "OK - barra que andou nao e morte; um clique e a tecla "
       "por corpo" if not falhas else "FALHOU: " + "; ".join(falhas))
