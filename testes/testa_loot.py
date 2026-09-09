@@ -278,6 +278,27 @@ if QUADRADOS != len(main.quadrados_do_saque()):
                   f"{len(main.quadrados_do_saque())}. Em rodadas do anel, "
                   f"cortar no teto so tira repeticao")
 
+# --------- 10b) corpo achado NA TELA nao precisa do anel: e o pagamento
+estado = zera()
+main.marca_o_corpo(estado, (1, 0), odo, na_tela=True)
+acoes.clear()
+saqueia_ate_o_fim(estado)
+apertadas_tela = len([a for a in acoes if a[0] == "tecla"
+                      and a[1] != main.STOP_WALK_KEY])
+estado = zera()
+main.marca_o_corpo(estado, (1, 0), odo)
+acoes.clear()
+saqueia_ate_o_fim(estado)
+apertadas_palpite = len([a for a in acoes if a[0] == "tecla"
+                         and a[1] != main.STOP_WALK_KEY])
+print(f"\nacoes por corpo: {apertadas_tela} achando na tela contra "
+      f"{apertadas_palpite} pelo palpite da odometria")
+if apertadas_tela >= apertadas_palpite:
+    falhas.append(f"achar o corpo na tela nao economizou acao "
+                  f"({apertadas_tela} contra {apertadas_palpite}): o anel "
+                  f"existe para cobrir erro de palpite, e nao ha palpite "
+                  f"quando o quadrado foi identificado")
+
 # ------------------------ 11) quadrado fora da area do jogo nao e mirado
 _vx, _vy, vw, vh = main.GAME_VIEW
 borda = ((vw // main.TILE_PX) // 2, 0)

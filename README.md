@@ -65,6 +65,31 @@ entende — no Tibia o botão direito sobre um corpo abre/saqueia, e o esquerdo 
 manda o personagem andar para lá. A tecla depende de estar configurada no
 cliente, então ela entra como reforço, não como aposta única.
 
+**O corpo é procurado NA TELA, não estimado.** A posição vinda da odometria erra
+por 1 SQM com facilidade, e cobrir esse erro varrendo o anel em volta é
+tentativa e erro. Existe um sinal direto: o quadrado onde o bicho estava **muda**
+quando ele morre (sprite de bicho → sprite de corpo), e o quadrado vizinho que
+nunca teve bicho continua igual. Quem mudou é onde caiu.
+
+Não é reconhecimento de sprite de corpo — isso mudaria de espécie para espécie e
+precisaria de uma tabela por bicho, com um passo de aprendizado. É "este quadrado
+ficou diferente", que vale para qualquer bicho, inclusive um que o bot nunca viu.
+O quadro da última leitura com o bicho vivo é guardado junto com a posição, e a
+comparação alinha os dois quadros pelo tanto que o personagem andou — o viewport
+acompanha o personagem, então o mesmo lugar do mundo aparece deslocado.
+
+Medido em cenário sintético: corpo aparecendo muda **16,7** por pixel, chão
+parado **0,0**, chão inteiro trocado (o pior caso de água/fogo) **10,1**. Daí
+`LOOT_DIFF_MIN = 12`. Há uma segunda defesa, `LOOT_DIFF_MARGEM`: o vencedor tem
+de mudar 1,5× mais que o segundo colocado, senão o bot **diz que não sabe** e cai
+no palpite com a varredura. Dois bichos morrendo em quadrados diferentes, ou tudo
+mudando ao mesmo tempo, dão empate e não viram chute.
+
+O ganho é medido: **6 ações por corpo** achando na tela contra **48** pelo
+palpite, porque quadrado identificado não precisa de anel nenhum. Os números
+reais aparecem no log de cada morte (`mudou N por pixel, segundo M`) — é por eles
+que se calibra o limiar na sua caverna, já que os meus vêm de cenário sintético.
+
 **Não se varre o anel a clique.** Clique direito em chão vazio abre menu de
 contexto, e nove menus abertos atravancam o cliente. Um clique no quadrado
 estimado, e o anel em volta com a **tecla**, que sobre chão vazio não faz nada.
@@ -375,6 +400,14 @@ sai primeiro, que é a prioridade, e o resto da leitura continua.
 
 O código está comentado com o *porquê* de cada uma delas.
 
+- **Tentativa e erro é sinal de que falta um sinal.** O bot varria os 9
+  quadrados em volta do corpo porque a posição vinha de odometria e errava por
+  1 SQM. A pergunta certa não era "como varrer melhor" e sim "o que na tela diz
+  onde o corpo está" — e a resposta não exigia reconhecer sprite de corpo, que
+  precisaria de uma tabela por espécie: o quadrado que **mudou** desde a última
+  leitura com o bicho vivo é o corpo, e o vizinho que nunca teve bicho continua
+  igual. De 48 ações por corpo para 6.
+
 - **Dependência escondida vale por defeito.** O loot era chamado dentro do
   `if ENABLE_WALK:`, e o odômetro só era criado com esse mesmo interruptor
   ligado. Resultado: com o andar desligado o bot não saqueava **nada**, nos três
@@ -507,6 +540,7 @@ python testes/testa_erro_no_laco.py   # erro isolado não mata a caçada
 python testes/testa_loot.py           # vai até o corpo, clica, varre, esvazia a fila
 python testes/testa_loot_no_laco.py   # o loot no laço inteiro: morreu -> marcou -> saqueou
 python testes/testa_loot_modos.py     # o mesmo saque em stand/chase/kite, com e sem rota
+python testes/testa_acha_corpo.py     # acha o quadrado do corpo na tela, e admite quando não dá
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI
