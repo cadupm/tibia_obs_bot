@@ -78,6 +78,26 @@ quadrados, com o cursor pulando de um para outro, para cobrir o erro de 1 SQM do
 palpite de odometria. Varrer é chutar: clique ou tecla em quadrado sem corpo não
 saqueia nada, e clique direito em chão vazio ainda abre menu de contexto.
 
+**O corpo está onde uma barra de vida desapareceu.** Este é o sinal principal, e
+vem de um fato do cliente: bicho morto perde a barra de vida e o nome, sobrando
+só a sprite do cadáver. Então o quadrado que tinha barra e não tem mais é, por
+definição, onde ele caiu.
+
+É diferença de **conjuntos**, não de pixels: a resposta é "sumiu" ou "não sumiu",
+sem limiar para calibrar nem empate para desfazer. E usa o mesmo detector que o
+bot já usa para achar criatura — a moldura de 31×4 da barra, medida na tela.
+
+Isso substituiu a comparação de imagem como fonte primária, e os números de uma
+caçada real explicam por quê: ela media **14 contra 12** (limiar 12), **16 contra
+12**, **17 contra 17**. O vencedor mal passava do limiar e mal passava do
+segundo, e punha corpo a 2, 3 e 5 SQM num modo *stand* corpo a corpo, onde todo
+corpo tem de estar a 1. Os únicos saques que davam certo eram os que saíam a
+1 SQM por acidente.
+
+A comparação de imagem ficou como **reserva**, para quando nenhuma barra sumiu na
+tela — o bicho morreu fora dela, ou a leitura de referência não o pegou. O log
+diz qual dos dois decidiu.
+
 O que substituiu a varredura: **o corpo é identificado na tela.** O quadrado onde o
 bicho estava **muda** quando ele morre (sprite de bicho → sprite de corpo), e o
 quadrado vizinho que nunca teve bicho continua igual. Quem mudou é onde caiu.
@@ -552,6 +572,14 @@ O código está comentado com o *porquê* de cada uma delas.
   procurava o corpo só no quadrado do palpite, justamente o erro que a busca
   existe para corrigir. Um teste guarda a distinção; o resto foi removido.
 
+- **Antes de calibrar um limiar, procure o sinal discreto.** A localização do
+  corpo vinha de comparar imagens de quadrado e ficar acima de um limiar; numa
+  caçada real isso dava 14 contra 12, e eu estava a caminho de ajustar o limiar.
+  O fato que resolvia estava na mecânica do jogo, e veio de quem joga: **bicho
+  morto perde a barra de vida**. O quadrado que tinha barra e não tem mais é
+  onde ele caiu — diferença de conjuntos, sem limiar, sem empate. Calibrar
+  melhor um sinal ruim é sempre pior do que achar o sinal certo.
+
 - **Falar uma coisa e fazer outra é pior do que errar.** `acha_o_corpo` e
   `acha_os_corpos` liam a mesma pontuação e decidiam diferente: o primeiro
   desempata pelo mais perto do palpite quando as notas estão juntas, o segundo
@@ -741,6 +769,7 @@ python testes/testa_loot_grupo.py     # três bichos: grava os três corpos, rec
 python testes/testa_loot_fugitivo.py  # bicho que fugiu da tela não trava o saque do que morreu
 python testes/testa_loot_escolhido.py # ataca todos, saqueia só os escolhidos
 python testes/testa_calibra_barra.py  # a barra do personagem calibra a conversão barra->quadrado
+python testes/testa_barra_sumiu.py    # o corpo está onde uma barra de vida desapareceu
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI

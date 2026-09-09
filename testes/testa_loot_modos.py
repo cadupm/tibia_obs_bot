@@ -12,7 +12,8 @@ configuracoes, e nenhuma delas tinha a ver com saquear:
 
 Este teste roda o laco de verdade (run_bot) nas seis combinacoes de modo de
 luta x andar ligado/desligado, e exige o mesmo resultado em todas: um bicho
-morreu, o corpo foi achado na tela, e o bot clicou nele - uma vez.
+morreu, o corpo foi localizado pela BARRA QUE SUMIU, e o bot clicou nele - uma
+vez.
 """
 import io
 import os
@@ -156,7 +157,9 @@ def roda(modo, andar):
         main.run_bot()
     log = saida.getvalue()
     return {
-        "achou": "; corpo em " in log,
+        "achou": ("a barra de vida sumiu em " in log
+                  or "; nenhuma barra sumiu" in log),
+        "pela_barra": "a barra de vida sumiu em " in log,
         "marcou": "[loot] bicho morreu" in log,
         "cliques": sum(1 for a in fita if a[0] == "clique"),
         "teclas": sum(1 for a in fita if a[0] == "tecla"
@@ -167,19 +170,21 @@ def roda(modo, andar):
 
 falhas = []
 print("um bicho morre colado; o que o bot faz pelo corpo:\n")
-print(f"  {'modo':<7} {'andar':<7} {'achou':<6} {'marcou':<7} "
+print(f"  {'modo':<7} {'andar':<7} {'p/ barra':<9} {'marcou':<7} "
       f"{'cliques':>7}")
 resultados = {}
 for modo in ("stand", "chase", "kite"):
     for andar in (True, False):
         r = roda(modo, andar)
         resultados[(modo, andar)] = r
-        print(f"  {modo:<7} {str(andar):<7} {str(r['achou']):<6} "
+        print(f"  {modo:<7} {str(andar):<7} {str(r['pela_barra']):<9} "
               f"{str(r['marcou']):<7} {r['cliques']:>7}")
         rotulo = f"{modo}/andar={andar}"
-        if not r["achou"]:
-            falhas.append(f"{rotulo}: nao achou o corpo na tela, embora o "
-                          f"quadrado tenha mudado de bicho para corpo")
+        if not r["pela_barra"]:
+            falhas.append(f"{rotulo}: nao localizou o corpo pela BARRA QUE "
+                          f"SUMIU. Bicho morto perde a barra de vida, entao o "
+                          f"quadrado que tinha barra e nao tem mais e onde ele "
+                          f"caiu - e o sinal direto, sem limiar")
         if not r["marcou"]:
             falhas.append(f"{rotulo}: nao marcou o corpo - a fiacao entre a "
                           f"morte e o loot nao fecha")

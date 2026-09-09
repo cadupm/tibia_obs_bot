@@ -136,12 +136,14 @@ if _os.environ.get("VERBOSO"):
         if "[loot]" in _l or "[attack]" in _l:
             print("   " + _l)
 cliques = [i for i, o in fita if isinstance(o, tuple) and o[0] == "clique"]
-print(f"achou o corpo na tela: {'; corpo em ' in log}")
+print(f"achou pela barra que sumiu: "
+      f"{'a barra de vida sumiu em ' in log}")
 print(f"marcou o corpo:        {'[loot] bicho morreu' in log}")
 print(f"clicou no corpo:       {cliques}")
-if "; corpo em " not in log:
-    falhas.append("nao achou o corpo na tela, embora o quadrado tenha mudado "
-                  "de bicho para corpo")
+if "a barra de vida sumiu em " not in log:
+    falhas.append("nao localizou o corpo pela BARRA QUE SUMIU, que e o sinal "
+                  "direto: bicho morto perde a barra de vida, entao o quadrado "
+                  "que tinha barra e nao tem mais e onde ele caiu")
 if not cliques:
     falhas.append("nunca clicou no corpo")
 if "[loot] bicho morreu" not in log:

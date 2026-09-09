@@ -3904,6 +3904,43 @@ def mudou_quanto(antes, agora):
                         - agora.astype(np.float32)).mean())
 
 
+def barras_que_sumiram(havia, agora, andou):
+    """
+    Quadrados que tinham barra de vida e nao tem mais: onde os bichos morreram.
+
+    FATO DO CLIENTE, e o sinal mais direto que existe para isto: bicho morto
+    perde a barra de vida e o nome, sobrando so a sprite do cadaver. O quadrado
+    em que havia barra e agora nao ha mais e, por definicao, onde ele caiu.
+
+    `havia` e a lista de offsets com barra na leitura de referencia, `agora` a
+    de agora, e `andou` o quanto o personagem se deslocou entre as duas - e o
+    que traz as duas para o mesmo referencial, porque offset e relativo ao
+    personagem e o personagem se move.
+
+    E diferenca de CONJUNTOS, nao de pixels: a resposta e "sumiu" ou "nao
+    sumiu", sem limiar para calibrar. A comparacao de imagem que isto substitui
+    media 14 contra 12 numa cacada de verdade - decidindo no ruido - e punha
+    corpo a 5 SQM num modo corpo a corpo.
+
+    Devolve os quadrados no referencial de AGORA, do mais perto do personagem
+    para o mais longe: com varias mortes juntas, a primeira a saquear e a mais
+    perto.
+    """
+    if not havia:
+        return []
+    trazidos = [(int(round(q[0] - andou[0])), int(round(q[1] - andou[1])))
+                for q in havia]
+    ainda = set(agora)
+    sumiram = [q for q in trazidos if q not in ainda]
+    # sem repetir, e o mais perto primeiro
+    vistos, fila = set(), []
+    for q in sorted(sumiram, key=lambda q: max(abs(q[0]), abs(q[1]))):
+        if q not in vistos:
+            vistos.add(q)
+            fila.append(q)
+    return fila
+
+
 def acha_o_corpo(tela_antes, tela_agora, palpite, andou, onde_havia=()):
     """
     Qual quadrado do anel mudou desde que o bicho estava vivo.
@@ -4948,6 +4985,15 @@ def run_bot():
                         havia_agora = [(int(round(q[0] - andado[0])),
                                         int(round(q[1] - andado[1])))
                                        for q in havia]
+                        # A BARRA QUE SUMIU, ANTES DE TUDO. Bicho morto perde
+                        # a barra de vida; quadrado que tinha barra e nao tem
+                        # mais e onde ele caiu, por definicao. E o mesmo
+                        # detector que acha criatura, e a resposta e discreta -
+                        # sumiu ou nao - sem limiar para calibrar no ruido.
+                        agora_tela = viewport(leitura)
+                        na_tela_pos = detect_creatures(leitura, img=agora_tela)
+                        sumiram = barras_que_sumiram(havia, na_tela_pos,
+                                                     andado)
                         # UM QUADRADO POR MORTE. Duas entradas podem sumir na
                         # mesma leitura - grupo todo com pouca vida - e ai sao
                         # dois corpos. A conta da trava sabe quantos foram.
@@ -4955,24 +5001,38 @@ def run_bot():
                         andou_px = (int(round(andado[0])),
                                     int(round(andado[1])))
                         agora_tela = viewport(leitura)
-                        todos = acha_os_corpos(
-                            tela_antes, agora_tela, palpite, andou_px,
-                            onde_havia=havia_agora, quantos=quantas_mortes)
-                        achou, nota, segundo = acha_o_corpo(
-                            tela_antes, agora_tela, palpite, andou_px,
-                            onde_havia=havia_agora)
-                        if achou is not None:
-                            print(f"[loot] {quantas_mortes} morte(s); corpo em "
-                                  f"{achou}: esse quadrado mudou {nota:.0f} por "
-                                  f"pixel desde que o bicho estava vivo "
-                                  f"(segundo: {segundo:.0f}; palpite era "
-                                  f"{palpite})"
-                                  + (f" e mais {len(todos) - 1} quadrado(s) "
-                                     f"{todos[1:]}" if len(todos) > 1 else ""))
+                        if sumiram:
+                            # o sinal direto: barra que existia e nao existe
+                            # mais. Sem limiar, sem empate para desfazer.
+                            todos = sumiram[:quantas_mortes]
+                            achou = todos[0]
+                            print(f"[loot] {quantas_mortes} morte(s); a barra "
+                                  f"de vida sumiu em {todos}: e ali que os "
+                                  f"corpos estao (palpite era {palpite})")
                         else:
-                            print(f"[loot] nenhum quadrado mudou o bastante "
-                                  f"para ser corpo (maior {nota:.0f}, limiar "
-                                  f"{LOOT_DIFF_MIN:.0f})"
+                            # ninguem sumiu da tela - o bicho morreu fora dela,
+                            # ou a leitura de referencia nao o pegou. Ai vale a
+                            # comparacao de imagem, com o limiar dela.
+                            todos = acha_os_corpos(
+                                tela_antes, agora_tela, palpite, andou_px,
+                                onde_havia=havia_agora,
+                                quantos=quantas_mortes)
+                            achou, nota, segundo = acha_o_corpo(
+                                tela_antes, agora_tela, palpite, andou_px,
+                                onde_havia=havia_agora)
+                            if achou is not None:
+                                print(f"[loot] {quantas_mortes} morte(s); "
+                                      f"nenhuma barra sumiu na tela; pela "
+                                      f"mudanca de imagem o corpo esta em "
+                                      f"{achou} ({nota:.0f} por pixel, segundo "
+                                      f"{segundo:.0f}; palpite era {palpite})"
+                                      + (f" e mais {len(todos) - 1} "
+                                         f"quadrado(s) {todos[1:]}"
+                                         if len(todos) > 1 else ""))
+                            else:
+                                print(f"[loot] nenhuma barra sumiu e nenhum "
+                                  f"quadrado mudou o bastante (maior "
+                                  f"{nota:.0f}, limiar {LOOT_DIFF_MIN:.0f})"
                                   + (": LARGO O CORPO porque "
                                      "LOOT_SO_SE_ACHOU esta ligado (desligue "
                                      "para clicar no palpite em vez de nao "
