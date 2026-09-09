@@ -51,10 +51,20 @@ class OdoFalso:
         return False
 
 
-def viewport_com_bicho(dx, dy):
-    _vx, _vy, vw, vh = main.GAME_VIEW
-    img = np.full((vh, vw, 3), 30, dtype=np.uint8)
-    meio_col, meio_lin = (vw // main.TILE_PX) // 2, (vh // main.TILE_PX) // 2
+_vx, _vy, _VW, _VH = main.GAME_VIEW
+CHAO = np.random.default_rng(3).integers(40, 70, (_VH, _VW, 3), dtype=np.uint8)
+
+
+def quadrado(img, dx, dy, cor, tamanho=44):
+    meio_col, meio_lin = (_VW // main.TILE_PX) // 2, (_VH // main.TILE_PX) // 2
+    x0 = (meio_col + dx) * main.TILE_PX + (main.TILE_PX - tamanho) // 2
+    y0 = (meio_lin + dy) * main.TILE_PX + (main.TILE_PX - tamanho) // 2
+    img[y0:y0 + tamanho, x0:x0 + tamanho] = cor
+    return img
+
+
+def barra(img, dx, dy):
+    meio_col, meio_lin = (_VW // main.TILE_PX) // 2, (_VH // main.TILE_PX) // 2
     x = (meio_col + dx) * main.TILE_PX + 18
     y = (meio_lin + dy - main.CREATURE_BAR_ABOVE) * main.TILE_PX + 10
     img[y:y + 4, x:x + 31] = (0, 0, 0)
@@ -62,7 +72,9 @@ def viewport_com_bicho(dx, dy):
     return img
 
 
-TELA = viewport_com_bicho(1, 0)             # bicho colado a direita
+# o quadrado muda de bicho para corpo: e o unico sinal de onde ele caiu
+TELA_VIVO = barra(quadrado(CHAO.copy(), 1, 0, (170, 40, 40)), 1, 0)
+TELA_MORTO = quadrado(CHAO.copy(), 1, 0, (95, 75, 55))
 
 
 def loop_sleep(_s):
@@ -77,7 +89,9 @@ main.read_bars = lambda win: (1.0, 1.0)
 main.battle_state = lambda win: ROTEIRO[min(quadro["i"], len(ROTEIRO) - 1)]
 main.Odometro = OdoFalso
 main.client_rect = lambda win: (0, 0, 1920, 1009)
-main.grab = lambda regiao: TELA
+main.grab = lambda regiao: (
+    TELA_VIVO if ROTEIRO[min(quadro["i"], len(ROTEIRO) - 1)][0] > 0
+    else TELA_MORTO)
 main.detect_marks = lambda win, mm=None, cor=None: []
 main.click_game = lambda x, y, pausa=0.09, botao="esquerdo", mod="": fita.append((quadro["i"], ("clique", botao)))
 main.is_usable = lambda win: True
@@ -117,6 +131,10 @@ for i, o_que in fita:
 
 saques = [i for i, o in fita if o == main.LOOT_HOTKEY]
 cliques = [i for i, o in fita if isinstance(o, tuple) and o[0] == "clique"]
+print(f"achou o corpo na tela: {'[loot] achei o corpo na tela' in log}")
+if "[loot] achei o corpo na tela" not in log:
+    falhas.append("nao achou o corpo na tela, embora o quadrado tenha mudado "
+                  "de bicho para corpo")
 miras = [i for i, o in fita if isinstance(o, tuple) and o[0] == "mira"]
 falhas = []
 print(f"\nmarcou o corpo: {'[loot] bicho morreu' in log}")
@@ -128,10 +146,9 @@ if not cliques:
 if "[loot] bicho morreu" not in log:
     falhas.append("o corpo nunca foi marcado: a fiacao entre a morte e o loot "
                   "nao fecha")
-if not saques:
-    falhas.append("nunca apertou a tecla de saque")
-if not miras:
-    falhas.append("nunca mirou o cursor no corpo")
+if saques and not main.LOOT_USA_TECLA:
+    falhas.append("apertou a tecla de saque com LOOT_USA_TECLA desligado: o "
+                  "clique com o direito no corpo ja saqueia")
 
 print("\nVEREDITO:", "OK - o loot acontece de ponta a ponta"
       if not falhas else "FALHOU: " + "; ".join(falhas))

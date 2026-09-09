@@ -58,9 +58,30 @@ class OdoFalso:
         return False
 
 
-def viewport_com_bicho(dx, dy):
+def chao():
+    """Textura fixa de caverna: o chao nao pode mudar sozinho, senao a busca
+    do corpo nao teria como separar o que mudou."""
+    rng = np.random.default_rng(3)
     _vx, _vy, vw, vh = main.GAME_VIEW
-    img = np.full((vh, vw, 3), 30, dtype=np.uint8)
+    return rng.integers(40, 70, (vh, vw, 3), dtype=np.uint8)
+
+
+CHAO = chao()
+
+
+def quadrado(img, dx, dy, cor, tamanho=44):
+    """Desenha um bicho ou um corpo no quadrado dado."""
+    _vx, _vy, vw, vh = main.GAME_VIEW
+    meio_col, meio_lin = (vw // main.TILE_PX) // 2, (vh // main.TILE_PX) // 2
+    x0 = (meio_col + dx) * main.TILE_PX + (main.TILE_PX - tamanho) // 2
+    y0 = (meio_lin + dy) * main.TILE_PX + (main.TILE_PX - tamanho) // 2
+    img[y0:y0 + tamanho, x0:x0 + tamanho] = cor
+    return img
+
+
+def barra(img, dx, dy):
+    """A moldura da barra de vida, que e como o bot enxerga a criatura."""
+    _vx, _vy, vw, vh = main.GAME_VIEW
     meio_col, meio_lin = (vw // main.TILE_PX) // 2, (vh // main.TILE_PX) // 2
     x = (meio_col + dx) * main.TILE_PX + 18
     y = (meio_lin + dy - main.CREATURE_BAR_ABOVE) * main.TILE_PX + 10
@@ -69,7 +90,10 @@ def viewport_com_bicho(dx, dy):
     return img
 
 
-TELA = viewport_com_bicho(1, 0)             # bicho colado a direita
+# BICHO VIVO e CORPO no mesmo quadrado, sobre o mesmo chao: a diferenca entre
+# os dois e o unico sinal de onde ele caiu, e e o que o bot usa.
+TELA_VIVO = barra(quadrado(CHAO.copy(), 1, 0, (170, 40, 40)), 1, 0)
+TELA_MORTO = quadrado(CHAO.copy(), 1, 0, (95, 75, 55))
 
 
 def roda(modo, andar):
@@ -88,7 +112,11 @@ def roda(modo, andar):
                                                 len(ROTEIRO) - 1)]
     main.Odometro = OdoFalso
     main.client_rect = lambda win: (0, 0, 1920, 1009)
-    main.grab = lambda regiao: TELA
+    # a tela acompanha o roteiro: com bicho na lista, o bicho vivo; depois de
+    # ele sair, o corpo no mesmo quadrado
+    main.grab = lambda regiao: (
+        TELA_VIVO if ROTEIRO[min(quadro["i"], len(ROTEIRO) - 1)][0] > 0
+        else TELA_MORTO)
     main.detect_marks = lambda win, mm=None, cor=None: []
     main.is_usable = lambda win: True
     main.focus_window = lambda win: True
@@ -128,6 +156,7 @@ def roda(modo, andar):
         main.run_bot()
     log = saida.getvalue()
     return {
+        "achou": "[loot] achei o corpo na tela" in log,
         "marcou": "[loot] bicho morreu" in log,
         "cliques": sum(1 for a in fita if a[0] == "clique"),
         "saques": sum(1 for a in fita
@@ -139,29 +168,30 @@ def roda(modo, andar):
 
 falhas = []
 print("um bicho morre colado; o que o bot faz pelo corpo:\n")
-print(f"  {'modo':<7} {'andar':<7} {'marcou':<7} {'cliques':>7} "
-      f"{'miras':>6} {'saques':>7}")
+print(f"  {'modo':<7} {'andar':<7} {'achou':<6} {'marcou':<7} "
+      f"{'cliques':>7}")
 resultados = {}
 for modo in ("stand", "chase", "kite"):
     for andar in (True, False):
         r = roda(modo, andar)
         resultados[(modo, andar)] = r
-        print(f"  {modo:<7} {str(andar):<7} {str(r['marcou']):<7} "
-              f"{r['cliques']:>7} {r['miras']:>6} {r['saques']:>7}")
+        print(f"  {modo:<7} {str(andar):<7} {str(r['achou']):<6} "
+              f"{str(r['marcou']):<7} {r['cliques']:>7}")
         rotulo = f"{modo}/andar={andar}"
+        if not r["achou"]:
+            falhas.append(f"{rotulo}: nao achou o corpo na tela, embora o "
+                          f"quadrado tenha mudado de bicho para corpo")
         if not r["marcou"]:
             falhas.append(f"{rotulo}: nao marcou o corpo - a fiacao entre a "
                           f"morte e o loot nao fecha")
         if not r["cliques"]:
             falhas.append(f"{rotulo}: nao clicou no corpo")
-        if not r["saques"]:
-            falhas.append(f"{rotulo}: nao apertou a tecla de saque")
-        if not r["miras"]:
-            falhas.append(f"{rotulo}: nao mirou o cursor no corpo")
+        if r["saques"] and not main.LOOT_USA_TECLA:
+            falhas.append(f"{rotulo}: apertou a tecla de saque com "
+                          f"LOOT_USA_TECLA desligado")
 
 # o gesto tem de ser o MESMO: nao e so "funciona em todos", e "funciona igual"
-gestos = {k: (v["cliques"], v["miras"], v["saques"])
-          for k, v in resultados.items()}
+gestos = {k: (v["cliques"], v["saques"]) for k, v in resultados.items()}
 distintos = set(gestos.values())
 print(f"\ngestos distintos entre as 6 combinacoes: {len(distintos)} "
       f"{sorted(distintos)}")

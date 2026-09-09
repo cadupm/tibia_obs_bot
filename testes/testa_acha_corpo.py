@@ -116,6 +116,24 @@ if achou is not None:
     falhas.append("desligado e mesmo assim opinou")
 main.LOOT_ACHA_CORPO = True
 
+# --------------- 7b) desligar a VARREDURA nao pode encolher a BUSCA
+# Sao dois aneis com o mesmo desenho e razoes opostas: a varredura de tecla e
+# chutar em volta, e a busca na tela e medir. Compartilhando a mesma funcao,
+# desligar a varredura fazia o bot procurar o corpo num quadrado so - o do
+# palpite, que a busca existe justamente para corrigir.
+guardado = main.LOOT_VARRE
+main.LOOT_VARRE = False
+busca_sem, varre_sem = len(main.anel_de_busca()), len(main.quadrados_do_saque())
+main.LOOT_VARRE = True
+busca_com = len(main.anel_de_busca())
+main.LOOT_VARRE = guardado
+print(f"\ncom a varredura desligada: busca em {busca_sem} quadrado(s), "
+      f"varredura em {varre_sem}")
+if busca_sem != busca_com or busca_sem < 9:
+    falhas.append(f"desligar a varredura encolheu a busca para {busca_sem} "
+                  f"quadrado(s): o bot passaria a procurar o corpo so no "
+                  f"quadrado do palpite, que e o erro que a busca corrige")
+
 # --------------- 8) quanto o corpo muda, de fato: o numero que calibra
 print(f"\npara calibrar LOOT_DIFF_MIN (hoje {main.LOOT_DIFF_MIN}):")
 for rotulo, a, b in (("bicho -> corpo", antes, depois),

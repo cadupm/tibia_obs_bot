@@ -256,12 +256,19 @@ LOOT_HOTKEY_NUMPAD = True       # mandar TAMBEM o menos do teclado numerico.
                                 # Tecla que o cliente nao usa nao faz nada,
                                 # entao mandar as duas nao custa.
 LOOT_DIST = 1                   # SQM: daqui o saque alcanca o corpo
-LOOT_TENTATIVAS = 3             # apertadas por QUADRADO (saque leva um por vez)
-LOOT_VARRE = True               # varrer os quadrados em volta, e nao so o
-                                # estimado: a posicao do corpo vem de odometria
-                                # e erra por 1 SQM com facilidade. Errou o
-                                # quadrado, nao pega nada. Apertar a tecla sobre
-                                # chao vazio nao tem custo, entao vale varrer.
+LOOT_TENTATIVAS = 3             # apertadas por QUADRADO, quando a tecla e usada
+LOOT_USA_TECLA = False          # a tecla de saque ALEM do clique. Desligada por
+                                # padrao: o clique com o direito no corpo ja
+                                # saqueia, e se o bot sabe que clicou nele esta
+                                # feito. A tecla vinha depois mirando o cursor
+                                # em nove pontos - trabalho para confirmar algo
+                                # que ja estava confirmado.
+LOOT_VARRE = False              # varrer o anel em volta com a tecla. Existia
+                                # para cobrir erro do palpite de odometria, que
+                                # errava por 1 SQM. Com o corpo IDENTIFICADO na
+                                # tela nao ha palpite para cobrir - e varrer
+                                # virou clicar/apertar em lugar que nao tem
+                                # corpo.
 LOOT_VARRE_RAIO = 1             # SQM em volta do estimado (1 = os 9 quadrados)
 LOOT_POR_VEZ = 3                # quadrados varridos por leitura: a varredura
                                 # inteira numa leitura so seguraria a cura
@@ -299,6 +306,13 @@ LOOT_FECHA_MENU = True          # esc depois de clicar: se um menu de contexto
 # precisa de tabela de sprite de corpo por especie - o quadro anterior e a
 # referencia.
 LOOT_ACHA_CORPO = True
+LOOT_SO_SE_ACHOU = True         # so saqueia quando o quadrado foi
+                                # IDENTIFICADO na tela. Nao sabendo onde o
+                                # corpo caiu, o bot largava tiro para todo lado
+                                # esperando acertar; agora ele larga o corpo e
+                                # diz que largou. Chutar clique de botao direito
+                                # em chao vazio abre menu de contexto e nao
+                                # saqueia nada.
 LOOT_DIFF_MIN = 12.0            # diferenca media por pixel para o quadrado
                                 # contar como "mudou". Chao parado da quase
                                 # zero; sair um bicho de cima muda muito.
@@ -1469,6 +1483,22 @@ def quadrados_do_saque():
     r = LOOT_VARRE_RAIO
     volta = [(dx, dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
     # o estimado primeiro, e depois os vizinhos do mais perto para o mais longe
+    volta.sort(key=lambda d: (abs(d[0]) + abs(d[1]), abs(d[0]), abs(d[1])))
+    return volta
+
+
+def anel_de_busca():
+    """
+    Os quadrados onde PROCURAR o corpo na tela.
+
+    Separado do anel da varredura de tecla de proposito: desligar a varredura
+    (que e chutar) encolhia tambem a busca (que e medir), e o bot passava a
+    procurar o corpo num quadrado so - justamente o quadrado do palpite que a
+    busca existe para corrigir. Sao duas coisas com o mesmo desenho e razoes
+    opostas.
+    """
+    r = max(LOOT_VARRE_RAIO, 1)
+    volta = [(dx, dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
     volta.sort(key=lambda d: (abs(d[0]) + abs(d[1]), abs(d[0]), abs(d[1])))
     return volta
 
@@ -3698,7 +3728,7 @@ def acha_o_corpo(tela_antes, tela_agora, palpite, andou):
     if not LOOT_ACHA_CORPO or tela_antes is None or tela_agora is None:
         return None, 0.0, 0.0
     notas = []
-    for delta in quadrados_do_saque():
+    for delta in anel_de_busca():
         aqui = (palpite[0] + delta[0], palpite[1] + delta[1])
         # o MESMO lugar do mundo estava, no quadro antigo, deslocado pelo tanto
         # que o personagem andou desde entao
@@ -3861,24 +3891,33 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
         print(f"[loot] cheguei: corpo a {distancia:.0f} SQM, dentro do alcance "
               f"de {LOOT_DIST}")
 
-    # 1) CLICAR NO BICHO, uma vez por corpo. Nao se varre o anel com clique:
-    # clique direito em chao vazio abre menu de contexto, e nove menus abertos
-    # atravancam o cliente.
+    # UM CLIQUE NO CORPO, E ACABOU. Clique com o direito sobre um corpo saqueia
+    # no cliente; sabendo que clicou nele, esta feito e nao ha o que conferir.
+    # Antes vinha uma varredura de tecla por cima, mirando o cursor em nove
+    # pontos - trabalho para confirmar o que ja estava confirmado, e clique ou
+    # tecla em quadrado sem corpo nao saqueia nada.
     if not corpo.get("clicou"):
         corpo["clicou"] = True
-        if dentro_da_tela(quadrado):
-            n = clica_no_corpo(leitura, quadrado, teclado)
-            if n:
-                print(f"[loot] cliquei {n}x com o botao {LOOT_BOTAO} no corpo "
-                      f"em {quadrado}"
-                      + (f" (com {LOOT_MOD})" if LOOT_MOD else ""))
-                loot_cd.mark()
-                return True
+        if not dentro_da_tela(quadrado):
+            print(f"[loot] o corpo em {quadrado} esta fora da area do jogo; "
+                  f"largo ele")
+            corpos.pop(0)
+            return bool(corpos)
+        n = clica_no_corpo(leitura, quadrado, teclado)
+        loot_cd.mark()
+        print(f"[loot] cliquei {n}x com o botao {LOOT_BOTAO} no corpo em "
+              f"{quadrado}" + (f" (com {LOOT_MOD})" if LOOT_MOD else "")
+              + ": saqueado")
+        if not LOOT_USA_TECLA:
+            corpos.pop(0)
+            return bool(corpos)
+        return True
 
-    # 2) A TECLA, varrendo o anel. A posicao do corpo e estimada e erra por
-    # 1 SQM com facilidade; a tecla sobre chao vazio nao faz nada, entao varrer
-    # em volta e de graca. A fila e consumida algumas por leitura - varrer tudo
-    # numa leitura so seguraria a cura por segundos.
+    # A TECLA, opcional (LOOT_USA_TECLA), para quem quiser reforco: ela age
+    # sobre o que esta debaixo do cursor e sobre chao vazio nao faz nada.
+    if not LOOT_USA_TECLA:
+        corpos.pop(0)
+        return bool(corpos)
     fila = corpo.get("fila")
     if fila is None:
         # QUADRADO VINDO DA TELA NAO PRECISA DE ANEL. A varredura existe para
@@ -4502,9 +4541,14 @@ def run_bot():
                 trava.morreu = False
                 historico = caminho.get("bichos_vistos") or []
                 if historico:
-                    # a leitura mais VELHA da janela: e a que ainda tinha o
-                    # bicho vivo na tela, antes de ele sumir
-                    visto_em, onde, tela_antes = historico[0]
+                    # O QUADRO MAIS RECENTE em que o bicho ainda constava da
+                    # battle list. A janela para de crescer quando a lista
+                    # esvazia, entao o ultimo item e o instante logo antes de
+                    # ele SAIR DA LISTA - o melhor dos dois lados: e a posicao
+                    # mais fresca e, para comparar a tela, o quadro mais perto
+                    # no tempo, com menos coisa tendo mudado por outro motivo.
+                    # Era o item mais VELHO da janela, cinco leituras atras.
+                    visto_em, onde, tela_antes = historico[-1]
                     # ACHAR NA TELA. O palpite da odometria erra por 1 SQM com
                     # facilidade, e era por isso que o bot varria o anel por
                     # tentativa e erro. Comparando o quadrado com como ele
@@ -4532,6 +4576,13 @@ def run_bot():
                                   f"odometria e varro o anel")
                     if achou is not None:
                         marca_o_corpo(caminho, achou, odo_agora, na_tela=True)
+                    elif LOOT_ACHA_CORPO and LOOT_SO_SE_ACHOU:
+                        # LARGAR E MELHOR QUE CHUTAR. Sem saber o quadrado, o
+                        # bot clicava e apertava em volta esperando acertar -
+                        # clique de botao direito em chao vazio abre menu de
+                        # contexto e nao saqueia nada.
+                        print("[loot] sem saber o quadrado do corpo, largo ele "
+                              "em vez de clicar no que nao e corpo")
                     else:
                         marca_o_corpo(caminho, onde, odo_agora,
                                       visto_em=visto_em)

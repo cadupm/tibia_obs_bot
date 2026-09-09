@@ -59,11 +59,18 @@ serve de freio de mão.
 lutar: acontece **depois** da briga e é **igual** em stand, chase e kite. O modo
 de luta muda de onde se parte, não o que se faz com o corpo.
 
-O gesto é: chegar no corpo, **clicar nele**, e varrer a tecla de saque em volta.
-O clique (`LOOT_CLICA`, botão direito por padrão) é o que qualquer cliente
-entende — no Tibia o botão direito sobre um corpo abre/saqueia, e o esquerdo só
-manda o personagem andar para lá. A tecla depende de estar configurada no
-cliente, então ela entra como reforço, não como aposta única.
+O gesto cabe numa frase: **chegar no corpo e clicar nele com o botão direito.**
+No Tibia o direito sobre um corpo saqueia — sabendo que clicou nele, está feito,
+e não há o que conferir depois. O esquerdo só manda o personagem andar para lá.
+
+A tecla de saque (`LOOT_USA_TECLA`) fica **desligada** por padrão. Ela vinha
+depois do clique mirando o cursor em nove pontos: trabalho para confirmar o que
+já estava confirmado. Continua disponível como reforço para quem quiser.
+
+**Não sabendo onde o corpo caiu, o bot larga o corpo** (`LOOT_SO_SE_ACHOU`).
+Clicar em volta esperando acertar não é saquear — clique de botão direito em
+chão vazio abre menu de contexto e não pega nada. Medido: 1 clique em 1 ponto
+por corpo, contra 1 clique mais 24 apertadas espalhadas em 9 pontos.
 
 **O corpo é procurado NA TELA, não estimado.** A posição vinda da odometria erra
 por 1 SQM com facilidade, e cobrir esse erro varrendo o anel em volta é
@@ -85,16 +92,26 @@ de mudar 1,5× mais que o segundo colocado, senão o bot **diz que não sabe** e
 no palpite com a varredura. Dois bichos morrendo em quadrados diferentes, ou tudo
 mudando ao mesmo tempo, dão empate e não viram chute.
 
-O ganho é medido: **6 ações por corpo** achando na tela contra **48** pelo
-palpite, porque quadrado identificado não precisa de anel nenhum. Os números
-reais aparecem no log de cada morte (`mudou N por pixel, segundo M`) — é por eles
-que se calibra o limiar na sua caverna, já que os meus vêm de cenário sintético.
+Os números reais aparecem no log de cada morte (`mudou N por pixel, segundo M`)
+— é por eles que se calibra o limiar na sua caverna, já que os meus vêm de
+cenário sintético.
 
-**Não se varre o anel a clique.** Clique direito em chão vazio abre menu de
-contexto, e nove menus abertos atravancam o cliente. Um clique no quadrado
-estimado, e o anel em volta com a **tecla**, que sobre chão vazio não faz nada.
-Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): menu aberto fica na frente e
-engole clique e tecla.
+Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): sem *classic control* o
+clique direito abre menu de contexto, que fica na frente e engole o que vier
+depois.
+
+A comparação usa o quadro **mais recente** em que o bicho ainda constava da
+battle list. A janela de quadros para de crescer quando a lista esvazia, então o
+último item é o instante logo antes de ele **sair da lista** — a posição mais
+fresca e, para comparar a tela, o quadro mais perto no tempo, com menos coisa
+tendo mudado por outro motivo. Era o item mais velho da janela, cinco leituras
+atrás.
+
+**Dois anéis com o mesmo desenho e razões opostas.** O anel da *varredura* de
+tecla é chutar em volta; o anel da *busca* na tela é medir. Eles compartilhavam
+a mesma função, e desligar a varredura encolheu a busca para um quadrado só — o
+do palpite, justamente o erro que a busca existe para corrigir. São funções
+separadas agora, com teste próprio.
 
 **A fila é de vários corpos** (`LOOT_MAX_CORPOS`). Guardar um só deixava no chão
 todo bicho da briga menos o último, e numa caverna se mata em grupo.

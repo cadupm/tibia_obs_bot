@@ -119,15 +119,17 @@ ABAS = [
         # Aba propria: o saque nao e parte de como lutar. Ele acontece DEPOIS
         # da briga, com a battle list limpa, e e igual em stand, chase e kite -
         # o modo de luta muda de onde se parte, nao o que se faz com o corpo.
-        ("Ir no corpo e clicar", "ENABLE_LOOT", [
+        ("Ir no corpo e clicar nele", "ENABLE_LOOT", [
             ("LOOT_CLICA", "Clicar no corpo", bool,
-             "no cliente, o botao direito no corpo abre/saqueia"),
+             "no cliente, o botao direito no corpo saqueia"),
             ("LOOT_BOTAO", "Botao do clique", str,
              "direito ou esquerdo"),
             ("LOOT_MOD", "Segurar junto", str,
              "shift, ctrl, alt ou vazio"),
             ("LOOT_CLIQUES", "Cliques por corpo", int,
-             "1 basta; o anel em volta e varrido com a tecla"),
+             "1 basta: clicou nele, esta saqueado"),
+            ("LOOT_FECHA_MENU", "Fechar menu depois do clique", bool,
+             "menu de contexto aberto engole clique e tecla"),
             ("LOOT_DIST", "Chegar a", int,
              "SQM do corpo antes de clicar"),
             ("LOOT_MAX_CORPOS", "Corpos na fila", int,
@@ -137,13 +139,23 @@ ABAS = [
             ("LOOT_VALIDADE", "Largar corpo mais velho que", float,
              "segundos: o de tras na rota nao vale a viagem"),
         ]),
-        ("Tecla de saque", None, [
+        ("Achar o corpo na tela", "LOOT_ACHA_CORPO", [
+            ("LOOT_SO_SE_ACHOU", "So saquear se achou", bool,
+             "sem saber o quadrado, largar e melhor que chutar"),
+            ("LOOT_DIFF_MIN", "Mudanca minima do quadrado", float,
+             "por pixel; o log de cada morte diz o valor real"),
+            ("LOOT_DIFF_MARGEM", "Vantagem sobre o segundo", float,
+             "vezes; sem isso animacao de chao ganharia por pouco"),
+            ("LOOT_VARRE_RAIO", "Procurar num raio de", int,
+             "SQM em volta do palpite (1 = os 9 quadrados)"),
+        ]),
+        ("Tecla de saque (opcional)", "LOOT_USA_TECLA", [
             ("LOOT_HOTKEY", "Tecla", str,
              "a do saque rapido, no cliente"),
             ("LOOT_HOTKEY_NUMPAD", "Mandar tambem o numpad", bool,
              "o - de cima e o - do numpad sao teclas diferentes"),
             ("LOOT_VARRE", "Varrer os quadrados em volta", bool,
-             "a posicao do corpo e estimada e erra por 1 SQM"),
+             "chutar em volta; desnecessario achando na tela"),
             ("LOOT_TENTATIVAS", "Apertadas por quadrado", int,
              "o saque pega um item por vez"),
             ("LOOT_MAX_APERTADAS", "Teto de apertadas por corpo", int,
