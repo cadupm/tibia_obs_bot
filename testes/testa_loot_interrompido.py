@@ -113,9 +113,10 @@ A_VIVO = {"A": A_MORRE_EM}
 fase(2, {}, [], [], None)                            # cave vazia
 fase(2, A_VIVO, [], ["A"], None)                     # A aparece
 fase(6, A_VIVO, [], ["A"], "A")                      # engajado, apanhando
-# A MORRE longe. Sao 5 leituras: da para a morte fechar e o clique no corpo
-# sair, e B chega com o personagem AINDA A CAMINHO - que e o caso a medir.
-fase(5, {}, [A_MORRE_EM], [], None)
+# A MORRE longe. Com a lista vazia o bot comeca a recolher: a morte fecha, a
+# carencia passa, o clique no corpo sai e o personagem poe-se a andar. Sao 8
+# leituras: o bastante para a caminhada COMECAR e nao terminar.
+fase(8, {}, [A_MORRE_EM], [], None)
 # B aparece no meio da caminhada e e morto colado
 B_VIVO = {"B": B_VEM_DE}
 fase(2, B_VIVO, [A_MORRE_EM], ["B"], None)
@@ -183,9 +184,12 @@ def clica_jogo(x, y, pausa=0.09, botao="esquerdo", mod=""):
     teleportasse, nao haveria caminhada para a briga interromper, que e
     justamente o que se quer medir.
     """
-    fita.append((agora(), botao, (x, y)))
     alvo = (round((x - _vx) / main.TILE_PX - 0.5) - MEIO_COL,
             round((y - _vy) / main.TILE_PX - 0.5) - MEIO_LIN)
+    # guarda em que quadrado do MUNDO o clique caiu: e o que diz se ele acertou
+    # o corpo ou o chao do lado
+    fita.append((agora(), botao, (x, y),
+                 (MUNDO["ch"][0] + alvo[0], MUNDO["ch"][1] + alvo[1])))
     MUNDO["indo"] = [MUNDO["ch"][0] + alvo[0], MUNDO["ch"][1] + alvo[1]]
 
 
@@ -313,6 +317,22 @@ if desistiu:
         f"CHEGAR no corpo, e a briga do meio nao e tempo tentando chegar - "
         f"contado no relogio de parede, a briga consome o prazo inteiro e o "
         f"corpo e largado sem nunca ter recebido um clique")
+# TODO CLIQUE DE SAQUE CAI EM CIMA DE UM CORPO. "vc ta clicando perto apenas":
+# clique no chao ao lado manda o cliente andar para esse chao, e o saque nao
+# acontece. A fita guarda o quadrado de MUNDO em que cada clique caiu.
+mortes = {A_MORRE_EM, B_MORRE_EM}
+fora_do_corpo = [f for f in fita
+                 if f[1] == main.LOOT_BOTAO and f[3] not in mortes]
+print(f"cliques de saque em cima de corpo: "
+      f"{len([f for f in fita if f[1] == main.LOOT_BOTAO]) - len(fora_do_corpo)}"
+      f" de {len([f for f in fita if f[1] == main.LOOT_BOTAO])}")
+if fora_do_corpo:
+    falhas.append(
+        f"{len(fora_do_corpo)} clique(s) de saque fora do corpo, em "
+        f"{[f[3] for f in fora_do_corpo]}; os corpos estao em {sorted(mortes)}. "
+        f"Clique no chao ao lado manda o cliente andar para esse chao e o "
+        f"saque nao acontece")
+
 # A BRIGA TEM DE CAIR NO MEIO DO SAQUE. Se o corpo de A fosse clicado e
 # saqueado antes de B aparecer, o teste nao mediria interrupcao nenhuma - so
 # um saque tranquilo seguido de outro. A prova e ter [attack] entre o clique
@@ -345,14 +365,19 @@ if andadas:
 # tecla de parar solta todas as acoes no cliente, inclusive a caminhada que o
 # clique tinha pedido. Fora isso, clicar de novo enquanto o personagem anda e o
 # que jogava o clique adiante do corpo.
+# UM CLIQUE POR APROXIMACAO, e todos em cima do corpo. Sao 2 corpos; cada
+# caminhada cancelada pela briga autoriza um clique novo, e chegar no corpo
+# depois de andar ate ele custa o clique de fechamento - aquele que dispensa um
+# menu de contexto e poe o cursor no lugar antes da tecla.
 recomecos = [l for l in linhas if "clico nele outra vez" in l]
-esperado_cliques = 2 + len(recomecos)
-print(f"cliques: {len(saques)} para 2 corpos + {len(recomecos)} caminhada(s) "
-      f"cancelada(s) pela briga")
-if len(saques) != esperado_cliques:
-    falhas.append(f"{len(saques)} cliques de saque, esperava "
-                  f"{esperado_cliques}: um por corpo, mais um por caminhada "
-                  f"que a briga cancelou")
+chegadas = [l for l in linhas if "cheguei no corpo" in l]
+esperado = 2 + len(recomecos) + len(chegadas)
+print(f"cliques: {len(saques)} = 2 corpos + {len(recomecos)} caminhada(s) "
+      f"cancelada(s) + {len(chegadas)} chegada(s)")
+if len(saques) != esperado:
+    falhas.append(f"{len(saques)} cliques de saque, esperava {esperado}: um "
+                  f"por corpo, mais um por caminhada que a briga cancelou, "
+                  f"mais o de fechamento ao chegar")
 
 print("\nVEREDITO:", "OK - a briga do meio nao custa o corpo"
       if not falhas else "FALHOU: " + "; ".join(falhas))

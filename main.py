@@ -351,7 +351,7 @@ LOOT_SO_MARCADOS = False        # saquear so os monstros marcados na lista.
                                 # auto-aprendizado, que cadastra todo bicho
                                 # novo que aparece.
 
-LOOT_MAX_CORPOS = 4             # corpos na fila de saque. Guardar UM so deixava
+LOOT_MAX_CORPOS = 12             # corpos na fila de saque. Guardar UM so deixava
                                 # no chao todo bicho da briga menos o ultimo -
                                 # numa caverna se mata em grupo.
 LOOT_VALIDADE = 90.0            # s desde a morte antes de largar o corpo sem
@@ -3225,6 +3225,48 @@ def desvio_da_barra(barras=None):
     return min(na_coluna, key=lambda off: abs(off[1]))[1]
 
 
+_CALIBRA = {"desvio": None, "seguidas": 0, "avisou": False}
+
+
+def calibra_a_barra():
+    """
+    Corrige CREATURE_BAR_ABOVE sozinho, pela barra do proprio personagem.
+
+    O quadrado do corpo sai da barra de vida, e a criatura fica CREATURE_BAR_
+    ABOVE quadrados abaixo da propria barra. Errando essa constante por um, TODO
+    corpo sai um quadrado deslocado - o bot clica no chao ao lado, o cliente
+    anda ate esse chao e o saque nao acontece. Relatado em cacada: "errou os
+    dois targets que matou por um sqm" e "vc ta clicando perto apenas".
+
+    Nao ha por que adivinhar: o personagem esta SEMPRE no quadrado do meio, e a
+    barra dele, passada pela mesma conversao, tem de cair em (0, 0).
+
+    So corrige com evidencia de sobra - o mesmo desvio em muitas leituras
+    seguidas -, porque um bicho parado exatamente acima ou abaixo do personagem
+    poe uma barra na mesma coluna. Bicho anda; a barra do personagem, nao.
+    """
+    global CREATURE_BAR_ABOVE
+    desvio = desvio_da_barra()
+    if desvio is None:
+        _CALIBRA["seguidas"] = 0
+        return
+    if desvio == _CALIBRA["desvio"]:
+        _CALIBRA["seguidas"] += 1
+    else:
+        _CALIBRA["desvio"], _CALIBRA["seguidas"] = desvio, 1
+    if desvio == 0 or _CALIBRA["seguidas"] < 30 or _CALIBRA["avisou"]:
+        return
+    _CALIBRA["avisou"] = True
+    novo = CREATURE_BAR_ABOVE + desvio
+    print(f"[calibra] a barra do proprio personagem esta caindo em (0, "
+          f"{desvio}) ha 30 leituras, e ela tem de cair em (0, 0): "
+          f"CREATURE_BAR_ABOVE={CREATURE_BAR_ABOVE} esta errado por {desvio}. "
+          f"Passo a usar {novo} - todo corpo estava saindo {abs(desvio)} "
+          f"quadrado deslocado. Ponha {novo} no config para nao depender "
+          f"desta medida.")
+    CREATURE_BAR_ABOVE = novo
+
+
 def longe_o_bastante(criaturas, distancia=None):
     """Distancia do bicho mais perto, em SQM (o Tibia mede pelo maior eixo)."""
     distancia = KITE_DIST if distancia is None else distancia
@@ -4314,6 +4356,7 @@ def saqueia_corpo(leitura, teclado, estado, loot_cd, corpo, odo=None):
         corpo["gasto"] = corpo.get("gasto", 0.0) + (time.time()
                                                     - corpo["quando"])
     elif corpo.get("clicou") and distancia > LOOT_TECLA_DIST:
+        corpo["desde_o_clique"] = 0
         # SO SE AINDA ESTIVER LONGE. Chegando colado durante a briga, o que
         # falta e a tecla e mais nada - clicar de novo seria um clique a toa em
         # cima de um corpo que ja da para saquear daqui.
@@ -4330,7 +4373,7 @@ def saqueia_corpo(leitura, teclado, estado, loot_cd, corpo, odo=None):
         focus_window(teclado)
 
     if not corpo.get("clicou"):
-        corpo["clicou"] = True
+        corpo["clicou"], corpo["desde_o_clique"] = True, 0
         n, teclas = clica_no_corpo(leitura, quadrado, teclado, distancia,
                                    lutando=estado.get("lutando", False))
         loot_cd.mark()
@@ -4342,15 +4385,33 @@ def saqueia_corpo(leitura, teclado, estado, loot_cd, corpo, odo=None):
                  f". O cliente anda ate la; a tecla sai quando chegar"))
         return bool(teclas) or not LOOT_TECLA, True
 
-    # ja clicou: o unico gesto que falta e a tecla, e ela so alcanca colado
-    if distancia <= LOOT_TECLA_DIST:
-        _n, teclas = clica_no_corpo(leitura, quadrado, teclado, distancia,
-                                    lutando=estado.get("lutando", False),
-                                    so_tecla=True)
+    # ------------------------------------------------------- CHEGOU NELE?
+    #
+    # Duas respostas, e basta uma. A odometria diz a distancia, e ela deriva -
+    # dizendo 2 quando e 1, a tecla nunca sai e o corpo fica no chao com o
+    # personagem do lado. A outra e o proprio andar ter TERMINADO: acabada a
+    # caminhada que o clique pediu, o personagem esta tao perto quanto vai
+    # ficar, e nao ha o que esperar.
+    corpo["desde_o_clique"] = corpo.get("desde_o_clique", 0) + 1
+    parou = (odo is not None and corpo["desde_o_clique"] >= 3
+             and odo.parado >= WALK_STOP_TICKS)
+    if distancia <= LOOT_TECLA_DIST or parou:
+        # O GESTO INTEIRO OUTRA VEZ, e nao so a tecla. O clique de longe pode
+        # ter aberto um MENU DE CONTEXTO no cliente (sem 'classic control', o
+        # botao direito abre menu em vez de usar), e menu aberto fica na frente
+        # e engole a tecla - "o clique ta sendo as vezes no monstro mas nao ta
+        # looteando". Clicar de novo em cima do corpo dispensa o menu e poe o
+        # cursor no lugar; a tecla vem logo atras.
+        n, teclas = clica_no_corpo(leitura, quadrado, teclado,
+                                   min(distancia, LOOT_TECLA_DIST),
+                                   lutando=estado.get("lutando", False))
         loot_cd.mark()
-        print(f"[loot] cheguei no corpo em {quadrado}: "
-              + ("tecla " + " e ".join(repr(t) for t in teclas) + ". Saqueado"
-                 if teclas else "nada configurado"))
+        print(f"[loot] cheguei no corpo em {quadrado} (a {distancia:.0f} SQM"
+              + (", o andar terminou" if parou
+                 and distancia > LOOT_TECLA_DIST else "")
+              + f"): {n} clique com o botao {LOOT_BOTAO}"
+              + (" + tecla " + " e ".join(repr(t) for t in teclas)
+                 + ". Saqueado" if teclas else ". Sem tecla configurada"))
         return True, True
 
     # o personagem esta indo - foi o clique que mandou - e o bot so espera
@@ -4379,13 +4440,19 @@ def saque_na_hora(leitura, teclado, estado, loot_cd, odo=None):
     briga acabar deixava o primeiro corpo para o fim - "matou o primeiro e nao
     foi lootear, depois continuou atacando sem lootear".
 
-    UM CORPO POR LEITURA. Clicar em dois na mesma leitura manda duas
-    caminhadas, e so a ultima vale - a primeira vira um clique jogado fora.
+    SO O CORPO COLADO (dentro de LOOT_DIST). Esse se resolve sem sair do
+    lugar: um clique direito num corpo ao lado e um "usar", nao e ordem de
+    movimento. Corpo LONGE fica para depois da briga - clicar nele manda o
+    cliente ANDAR ate la, e andar no meio da briga leva o personagem para
+    dentro do que sobrou dela. E adianta pouco: o cliente engaja o proximo
+    bicho sozinho, a caminhada e cancelada e o clique se perde. Relatado em
+    cacada: "ele ataca antes de lootear, ai perde o tracking".
 
-    Um clique num corpo nao e ordem de movimento no sentido que troca chase por
-    stand: e um "usar". Estando o corpo longe o cliente anda ate la, e isso e
-    movimento - o preco de nao deixar o loot no chao, e foi escolha de quem
-    caca. Apanhando (vida abaixo de LOOT_ANTES_HP_MIN) quem chama nao chama.
+    Quem garante que nada fica no chao e a outra ponta - loot(), com a battle
+    list vazia, drena a fila inteira antes de a rota voltar a andar.
+
+    UM CORPO POR LEITURA. Apanhando (vida abaixo de LOOT_ANTES_HP_MIN) quem
+    chama nao chama.
 
     Devolve quantos corpos foram terminados.
     """
@@ -4393,6 +4460,9 @@ def saque_na_hora(leitura, teclado, estado, loot_cd, odo=None):
     if not ENABLE_LOOT or not corpos:
         return 0
     for corpo in list(corpos):
+        onde = onde_esta_o_corpo(corpo, odo)
+        if max(abs(onde[0]), abs(onde[1])) > LOOT_DIST:
+            continue                       # esse precisa de caminhada: fica
         acabou, agiu = saqueia_corpo(leitura, teclado, estado, loot_cd, corpo,
                                      odo)
         if acabou:
@@ -4404,21 +4474,18 @@ def saque_na_hora(leitura, teclado, estado, loot_cd, odo=None):
 
 def corpo_ao_alcance(estado, odo=None):
     """
-    Ha corpo esperando saque, dentro da tela?
+    Ha corpo COLADO esperando saque?
 
     E a condicao de segurar a tecla de atacar entre uma morte e a proxima:
-    mata, SAQUEIA, ataca o proximo. A espera dura uma leitura, porque o saque e
-    um clique so - quem anda depois dele e o cliente, e ele anda sozinho.
-
-    Ja foi so "corpo ao alcance", e com isso o corpo do bicho que morreu a 2
-    SQM nao segurava nada: o bot engajava o proximo e o primeiro corpo so era
-    recolhido no fim da briga.
+    mata, SAQUEIA, ataca o proximo. So vale para corpo ao alcance de proposito:
+    esse se resolve num clique sem sair do lugar, e a espera dura uma leitura.
+    Corpo longe seguraria o ataque por segundos e ainda exigiria andar.
     """
     if not ENABLE_LOOT:
         return False
     for corpo in (estado.get("corpos") or []):
         onde = onde_esta_o_corpo(corpo, odo)
-        if (not corpo.get("clicou")
+        if (max(abs(onde[0]), abs(onde[1])) <= LOOT_DIST
                 and dentro_da_tela((int(round(onde[0])),
                                     int(round(onde[1]))))):
             return True
@@ -4440,26 +4507,37 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     if not ENABLE_LOOT or not corpos:
         return False
 
-    # corpo velho demais nao vale a viagem: ele ficou para tras na rota e ir
-    # atras dele e sair do caminho por nada
+    # CORPO VELHO DEMAIS nao vale a viagem: ele ficou para tras na rota. Mas o
+    # que envelhece e o tempo em que o bot esteve LIVRE para ir busca-lo, e nao
+    # o relogio de parede - loot() so e chamado com a battle list limpa, entao
+    # somar so entre chamadas consecutivas exclui a briga. Contado no relogio,
+    # uma briga longa vencia o prazo dos primeiros corpos enquanto ela ainda
+    # acontecia, e ao terminar o bot largava o que nunca teve chance de buscar.
     agora = time.time()
-    while corpos and agora - corpos[0]["desde"] > LOOT_VALIDADE:
-        velho = corpos.pop(0)
-        print(f"[loot] corpo de {agora - velho['desde']:.0f}s atras ficou para "
-              f"tras na rota; largo ele")
+    for c in corpos:
+        if c.get("livre_em") is not None and agora - c["livre_em"] <= 2.0:
+            c["livre"] = c.get("livre", 0.0) + (agora - c["livre_em"])
+        c["livre_em"] = agora
+    for velho in [c for c in corpos if c.get("livre", 0.0) > LOOT_VALIDADE]:
+        corpos.remove(velho)
+        print(f"[loot] {velho['livre']:.0f}s livres sem conseguir recolher "
+              f"este corpo; ficou para tras na rota e largo ele")
     if not corpos:
         return False
 
-    corpo = corpos[0]
+    # O MAIS PERTO PRIMEIRO, e nao o que morreu primeiro: menos caminhada entre
+    # um corpo e outro, e menos deriva de odometria acumulada no meio.
+    corpo = min(corpos, key=lambda c: max(
+        abs(onde_esta_o_corpo(c, odo)[0]), abs(onde_esta_o_corpo(c, odo)[1])))
     acabou, _agiu = saqueia_corpo(leitura, teclado, estado, loot_cd, corpo, odo)
     if acabou:
-        corpos.pop(0)
+        corpos.remove(corpo)
         return bool(corpos)
     onde = onde_esta_o_corpo(corpo, odo)
     if not dentro_da_tela((int(round(onde[0])), int(round(onde[1])))):
         print(f"[loot] o corpo esta fora da area do jogo, e nao ha quadrado "
               f"nenhum para clicar; largo ele")
-        corpos.pop(0)
+        corpos.remove(corpo)
         return bool(corpos)
     return True
 
@@ -4505,7 +4583,15 @@ def marca_o_corpo(estado, onde, odo=None, visto_em=None, na_tela=False):
     corpos.append({"abs": absoluto, "off": (float(onde[0]), float(onde[1])),
                    "desde": time.time(), "comecou": None,
                    "clicou": False, "na_tela": bool(na_tela)})
-    del corpos[:-LOOT_MAX_CORPOS]      # fila cheia: os mais velhos ja esfriaram
+    # FILA CHEIA NAO E SILENCIO. O teto era 4 e o descarte nao dizia nada:
+    # cinco bichos numa briga - normal numa caverna - e o primeiro a morrer
+    # sumia da fila sem nunca ter sido clicado. Medido: 4 saqueados de 5, sem
+    # uma linha no log.
+    while len(corpos) > LOOT_MAX_CORPOS:
+        largado = corpos.pop(0)
+        print(f"[loot] a fila ja tem {LOOT_MAX_CORPOS} corpos "
+              f"(LOOT_MAX_CORPOS); largo o mais velho, de "
+              f"{time.time() - largado['desde']:.0f}s atras")
     agora = onde_esta_o_corpo(corpos[-1], odo)
     print(f"[loot] bicho morreu a {agora[0]:.0f},{agora[1]:.0f} SQM; "
           f"{len(corpos)} corpo(s) na fila")
@@ -5049,6 +5135,7 @@ def run_bot():
                 # tudo como corpo.
                 tela_agora = viewport(leitura)
                 agora_barras = detect_creatures(leitura, img=tela_agora)
+                calibra_a_barra()          # a barra do personagem tem de dar 0
                 mundo_agora = {
                     (round(odo_agora.pos[0] + q[0] * MINIMAP_PX_SQM),
                      round(odo_agora.pos[1] + q[1] * MINIMAP_PX_SQM))

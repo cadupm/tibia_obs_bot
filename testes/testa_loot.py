@@ -175,9 +175,15 @@ for modo, dist in (("stand", 1), ("chase", 2), ("kite", main.KITE_DIST)):
           f"{len(teclas_de_saque())} tecla(s), terminou={acabou}")
     if not acabou:
         falhas.append(f"{modo}: nao terminou o saque")
-    if len(cliques()) != 1:
+    # COLADO: um clique so, com a tecla junto. TENDO DE ANDAR: o clique que
+    # manda o cliente ir ate la, e o de fechamento ao chegar - esse dispensa um
+    # menu de contexto que o primeiro possa ter aberto e poe o cursor no
+    # quadrado antes da tecla. Nenhum deles e "clique de aproximacao": nao ha
+    # um por leitura enquanto o personagem anda.
+    esperado = 1 if dist <= main.LOOT_DIST else 2
+    if len(cliques()) != esperado:
         falhas.append(f"{modo}: {len(cliques())} clique(s) no corpo, esperava "
-                      f"exatamente 1")
+                      f"{esperado}")
     if andou:
         falhas.append(f"{modo}: {len(andou)} clique(s) de andar atras do "
                       f"corpo. Clicar no corpo JA e a ordem de ir ate ele - "
@@ -185,9 +191,12 @@ for modo, dist in (("stand", 1), ("chase", 2), ("kite", main.KITE_DIST)):
                       f"clique adiante dele")
 
 print(f"  gesto (cliques, teclas) por modo: {gestos}")
-if len(set(gestos.values())) != 1:
-    falhas.append(f"o gesto difere entre os modos: {gestos}. Tem de ser o "
-                  f"mesmo - so a distancia de partida muda")
+# o gesto e o mesmo para a mesma distancia: chase e kite partem de longe e tem
+# de terminar igual um ao outro. O que muda de stand e a caminhada no meio.
+de_longe = {m: g for m, g in gestos.items() if m != "stand"}
+if len(set(de_longe.values())) != 1:
+    falhas.append(f"o gesto difere entre modos que partem da mesma situacao: "
+                  f"{de_longe}. So a distancia de partida devia mudar")
 
 # --------------------- 2) SO O CLIQUE, e num lugar so: era a reclamacao
 estado = zera()
@@ -245,9 +254,13 @@ print(f"  saqueou todos? {acabou} | {len(cliques())} clique(s) em corpo, "
       f"sobrou {len(estado.get('corpos') or [])} na fila")
 if not acabou or estado.get("corpos"):
     falhas.append("nao esvaziou a fila de corpos")
-if len(cliques()) != 3:
-    falhas.append(f"{len(cliques())} clique(s) para 3 corpos: cada corpo tem "
-                  f"de receber o seu, e so o seu")
+esperado = sum(1 if max(abs(o[0]), abs(o[1])) <= main.LOOT_DIST else 2
+               for o in ((1, 0), (3, 0), (0, 3)))
+if len(cliques()) != esperado:
+    falhas.append(f"{len(cliques())} clique(s) para 3 corpos, esperava "
+                  f"{esperado}: um para o colado, e dois para cada um que "
+                  f"exige caminhada (o que manda ir, e o de fechamento ao "
+                  f"chegar)")
 if cliques_de_andar():
     falhas.append(f"{len(cliques_de_andar())} clique(s) de andar entre os tres "
                   f"corpos: o clique no corpo ja leva o personagem ate la")
