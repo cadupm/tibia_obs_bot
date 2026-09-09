@@ -1,0 +1,174 @@
+# -*- coding: utf-8 -*-
+"""O loot vale nos tres modos de luta, e sem depender de andar a rota.
+
+Duas dependencias escondidas faziam o saque existir so em parte das
+configuracoes, e nenhuma delas tinha a ver com saquear:
+
+  1. o loot era chamado DENTRO do `if ENABLE_WALK:`. Com o andar desligado -
+     quem cava um ponto fixo, ou quem so quer o bot lutando - o bot nao
+     saqueava nada, e nada no log dizia por que;
+  2. o odometro so era criado com ENABLE_WALK ligado. Sem ele o bot marcava
+     todo corpo na origem, ou seja debaixo do proprio pe, e saqueava o chao.
+
+Este teste roda o laco de verdade (run_bot) nas seis combinacoes de modo de
+luta x andar ligado/desligado, e exige o mesmo resultado em todas: um bicho
+morreu, o corpo foi marcado, o bot clicou nele e apertou a tecla.
+"""
+import io
+import os
+import sys
+from contextlib import redirect_stdout
+sys.path.insert(0, os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))          # acha o main.py
+import numpy as np
+import main
+
+BICHO = np.full((17, 20, 3), 40, dtype=np.uint8)
+BICHO[3:8, 3:8] = (200, 30, 30)
+
+VAZIA = (0, False, None, [], None)
+NA_LISTA = (1, False, None, [BICHO], None)
+ENGAJADO = (1, True, 0.9, [BICHO], BICHO)
+ROTEIRO = [VAZIA] * 2 + [NA_LISTA] * 3 + [ENGAJADO] * 6 + [VAZIA] * 30
+
+
+class Janela:
+    isActive = True
+    title = "falso"
+    isMinimized = False
+
+
+class OdoFalso:
+    """Nao anda: o corpo fica onde morreu, colado no personagem."""
+
+    def __init__(self, _win=None):
+        self.pos = [0, 0]
+        self.parado = 9
+
+    def atualiza(self):
+        pass
+
+    def resync(self):
+        pass
+
+    def ancora(self, alvo):
+        pass
+
+    def mudou_de_andar(self):
+        return False
+
+
+def viewport_com_bicho(dx, dy):
+    _vx, _vy, vw, vh = main.GAME_VIEW
+    img = np.full((vh, vw, 3), 30, dtype=np.uint8)
+    meio_col, meio_lin = (vw // main.TILE_PX) // 2, (vh // main.TILE_PX) // 2
+    x = (meio_col + dx) * main.TILE_PX + 18
+    y = (meio_lin + dy - main.CREATURE_BAR_ABOVE) * main.TILE_PX + 10
+    img[y:y + 4, x:x + 31] = (0, 0, 0)
+    img[y + 1:y + 3, x + 1:x + 30] = (0, 95, 0)
+    return img
+
+
+TELA = viewport_com_bicho(1, 0)             # bicho colado a direita
+
+
+def roda(modo, andar):
+    """Roda o laco inteiro e devolve o que o bot fez pelo loot."""
+    fita, quadro = [], {"i": 0}
+
+    def loop_sleep(_s):
+        quadro["i"] += 1
+        if quadro["i"] >= len(ROTEIRO):
+            main.STOP = True
+
+    main.setup_windows = lambda: (Janela(), Janela())
+    main.ensure_bars = lambda win, force=False: ((0, 0, 10, 2), (0, 0, 10, 2))
+    main.read_bars = lambda win: (1.0, 1.0)
+    main.battle_state = lambda win: ROTEIRO[min(quadro["i"],
+                                                len(ROTEIRO) - 1)]
+    main.Odometro = OdoFalso
+    main.client_rect = lambda win: (0, 0, 1920, 1009)
+    main.grab = lambda regiao: TELA
+    main.detect_marks = lambda win, mm=None, cor=None: []
+    main.is_usable = lambda win: True
+    main.focus_window = lambda win: True
+    main.restore_windows = lambda: None
+    main.keyboard = type("K", (), {
+        "is_pressed": staticmethod(lambda k: False)})()
+    main.pyautogui = type("P", (), {
+        "press": staticmethod(lambda t: fita.append(("tecla", t))),
+        "keyDown": staticmethod(lambda t: None),
+        "keyUp": staticmethod(lambda t: None)})()
+    main.click_minimap = lambda w, p: fita.append(("mapa", p))
+    main.mira_mouse = lambda x, y: fita.append(("mira", (x, y)))
+    main.click_game = lambda x, y, pausa=0.09, botao="esquerdo", mod="": \
+        fita.append(("clique", botao))
+    main.time = type("T", (), {
+        "time": staticmethod(lambda: quadro["i"] * 0.3),
+        "sleep": staticmethod(loop_sleep)})()
+    main.load_monsters = lambda caminho=None: {"bicho": BICHO}
+    main.load_waypoints = lambda caminho=None: []
+    main.load_evitar = lambda caminho=None: {}
+    main.ONLY_KNOWN_MONSTERS = True
+    main.AUTO_LEARN = False
+    main.USE_MAP_MARKS = andar
+    main.USE_ROUTE_ORDER = False
+    main.ENABLE_WALK = andar
+    main.ATTACK_MODE = modo
+    main.ENABLE_HEAL = main.ENABLE_MANA = False
+    main.ENABLE_SPELL = main.ENABLE_AUTOCAST = False
+    main.ENABLE_LOOT = True
+    main.ENABLE_PARALISIA = False
+    main.PARAR_SE_MUDAR_ANDAR = False
+    main.ATTACK_CONFIRM = 2
+    main.STOP = False
+
+    saida = io.StringIO()
+    with redirect_stdout(saida):
+        main.run_bot()
+    log = saida.getvalue()
+    return {
+        "marcou": "[loot] bicho morreu" in log,
+        "cliques": sum(1 for a in fita if a[0] == "clique"),
+        "saques": sum(1 for a in fita
+                      if a[0] == "tecla" and a[1] == main.LOOT_HOTKEY),
+        "miras": sum(1 for a in fita if a[0] == "mira"),
+        "log": log,
+    }
+
+
+falhas = []
+print("um bicho morre colado; o que o bot faz pelo corpo:\n")
+print(f"  {'modo':<7} {'andar':<7} {'marcou':<7} {'cliques':>7} "
+      f"{'miras':>6} {'saques':>7}")
+resultados = {}
+for modo in ("stand", "chase", "kite"):
+    for andar in (True, False):
+        r = roda(modo, andar)
+        resultados[(modo, andar)] = r
+        print(f"  {modo:<7} {str(andar):<7} {str(r['marcou']):<7} "
+              f"{r['cliques']:>7} {r['miras']:>6} {r['saques']:>7}")
+        rotulo = f"{modo}/andar={andar}"
+        if not r["marcou"]:
+            falhas.append(f"{rotulo}: nao marcou o corpo - a fiacao entre a "
+                          f"morte e o loot nao fecha")
+        if not r["cliques"]:
+            falhas.append(f"{rotulo}: nao clicou no corpo")
+        if not r["saques"]:
+            falhas.append(f"{rotulo}: nao apertou a tecla de saque")
+        if not r["miras"]:
+            falhas.append(f"{rotulo}: nao mirou o cursor no corpo")
+
+# o gesto tem de ser o MESMO: nao e so "funciona em todos", e "funciona igual"
+gestos = {k: (v["cliques"], v["miras"], v["saques"])
+          for k, v in resultados.items()}
+distintos = set(gestos.values())
+print(f"\ngestos distintos entre as 6 combinacoes: {len(distintos)} "
+      f"{sorted(distintos)}")
+if len(distintos) != 1:
+    falhas.append(f"o saque nao e igual em todas as combinacoes: {gestos}. O "
+                  f"modo de luta muda de onde se parte, nao o que se faz com "
+                  f"o corpo")
+
+print("\nVEREDITO:", "OK - o mesmo saque em stand, chase e kite, com ou sem rota"
+      if not falhas else "FALHOU: " + "; ".join(falhas))

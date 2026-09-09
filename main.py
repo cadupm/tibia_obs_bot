@@ -277,6 +277,29 @@ LOOT_MIRA_PAUSA = 0.08          # s entre mirar o cursor e apertar a tecla
 LOOT_PRAZO = 8.0                # s tentando chegar no corpo antes de desistir:
                                 # corpo em cima de escada, ou bicho novo no
                                 # caminho, e loot que nao vale a cacada
+
+# CLICAR NO CORPO. A tecla de saque sozinha depende de estar configurada no
+# cliente e de agir sob o cursor; o clique e o gesto que qualquer cliente
+# entende. No Tibia o botao DIREITO sobre um corpo e o que abre/saqueia - o
+# esquerdo so manda o personagem andar para la.
+LOOT_CLICA = True
+LOOT_BOTAO = "direito"          # direito | esquerdo
+LOOT_MOD = ""                   # shift | ctrl | alt | vazio: alguns clientes
+                                # poem o saque rapido em shift+direito
+LOOT_CLIQUES = 1                # cliques no quadrado do corpo. NAO se varre o
+                                # anel com clique: clique direito em chao vazio
+                                # abre menu de contexto, e nove menus abertos
+                                # atravancam o cliente. O anel e varrido com a
+                                # TECLA, que sobre chao vazio nao faz nada.
+LOOT_FECHA_MENU = True          # esc depois de clicar: se um menu de contexto
+                                # abriu, ele fica na frente e engole o resto
+LOOT_MAX_CORPOS = 4             # corpos na fila de saque. Guardar UM so deixava
+                                # no chao todo bicho da briga menos o ultimo -
+                                # numa caverna se mata em grupo.
+LOOT_VALIDADE = 90.0            # s desde a morte antes de largar o corpo sem
+                                # tentar. Fila nao pode virar divida eterna: o
+                                # corpo de tres minutos atras esta longe, e ir
+                                # atras dele e sair da rota por nada.
 ATTACK_MODE = "stand"
 KITE_DIST = 3                   # SQM que se quer manter de qualquer bicho
 KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
@@ -1256,25 +1279,42 @@ def battle_state(win):
 MOUSEEVENTF_MOVE_ABS = 0x8001
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
+MOUSEEVENTF_RIGHTDOWN = 0x0008
+MOUSEEVENTF_RIGHTUP = 0x0010
+
+BOTOES = {"esquerdo": (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
+          "direito": (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP)}
 
 
-def click_game(x, y, pausa=0.09):
+def click_game(x, y, pausa=0.09, botao="esquerdo", mod=""):
     """
     Clique que o Tibia aceita.
 
     pyautogui.click nao tem efeito nenhum no cliente (testado: clique no minimapa
     e na battle list, zero reacao). O que funciona e mouse_event com coordenada
     ABSOLUTA normalizada em 65535, movendo antes e com uma pausa entre down e up.
+
+    'botao' escolhe esquerdo ou direito: no cliente, o direito sobre um corpo e
+    o que abre/saqueia, e o esquerdo so anda para la. 'mod' segura uma tecla
+    junto (shift, ctrl, alt) - alguns clientes poem o saque rapido em
+    shift+direito.
     """
     largura = user32.GetSystemMetrics(0)
     altura = user32.GetSystemMetrics(1)
     ax = int(x * 65535 / max(largura - 1, 1))
     ay = int(y * 65535 / max(altura - 1, 1))
+    desce, sobe = BOTOES.get(botao, BOTOES["esquerdo"])
     user32.mouse_event(MOUSEEVENTF_MOVE_ABS, ax, ay, 0, 0)
     time.sleep(0.05)
-    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, ax, ay, 0, 0)
-    time.sleep(pausa)
-    user32.mouse_event(MOUSEEVENTF_LEFTUP, ax, ay, 0, 0)
+    if mod:
+        pyautogui.keyDown(mod)
+    try:
+        user32.mouse_event(desce, ax, ay, 0, 0)
+        time.sleep(pausa)
+        user32.mouse_event(sobe, ax, ay, 0, 0)
+    finally:
+        if mod:
+            pyautogui.keyUp(mod)     # modificador preso trava o cliente todo
 
 
 def minimap_grab(win):
@@ -3309,9 +3349,9 @@ def show_loot():
          cliente, o cursor cai entre quadrados.
 
     Como usar: mate um bicho, fique COLADO no corpo e rode. Ele varre os 9
-    quadrados em volta, um por vez, dizendo em qual esta mirando. O quadrado
-    que abrir a bolsa e o certo - e se nenhum abrir com uma tecla mas abrir com
-    a outra, a hotkey esta na tecla que voce nao configurou no bot.
+    quadrados em volta com cada tecla, e depois CLICA nos quadrados vizinhos
+    com o botao configurado, dizendo o tempo todo onde esta agindo. O que abrir
+    a bolsa e o gesto certo.
     """
     leitura, teclado = setup_windows()
     if not leitura:
@@ -3335,12 +3375,29 @@ def show_loot():
             print(f"  quadrado {str(quadrado):>9} -> cursor em ({x}, {y}); "
                   f"apertei {tecla!r}")
             time.sleep(0.8)
-    print(chr(10) + "Se a bolsa abriu em algum quadrado, anote a tecla que "
-          "funcionou e ponha em LOOT_HOTKEY.")
-    print("Se NENHUM quadrado abriu nada com nenhuma das duas: a hotkey de "
-          "saque rapido nao esta configurada no cliente, ou esta noutra tecla.")
-    print("Se o cursor nem entrou na tela do jogo: GAME_VIEW/TILE_PX estao "
-          "errados para o seu cliente - rode --calib e meca.")
+    print(chr(10) + "Agora o CLIQUE, que e o gesto principal do saque: "
+          f"{LOOT_CLIQUES}x botao {LOOT_BOTAO}"
+          + (f" com {LOOT_MOD}" if LOOT_MOD else "") + " no quadrado do corpo.")
+    for quadrado in ((0, 1), (1, 0), (0, -1), (-1, 0), (0, 0)):
+        if not teclado.isActive:
+            focus_window(teclado)
+        x, y = ponto_do_quadrado(leitura, quadrado)
+        print(f"  quadrado {str(quadrado):>8} -> clicando em ({x}, {y})")
+        clica_no_corpo(leitura, quadrado, teclado)
+        time.sleep(1.0)
+
+    print(chr(10) + "COMO LER O RESULTADO")
+    print("  abriu a bolsa no CLIQUE: e o caminho bom, deixe LOOT_CLICA "
+          "ligado.")
+    print("  abriu a bolsa numa TECLA: anote qual e ponha em LOOT_HOTKEY.")
+    print("  o clique so fez o personagem ANDAR para o quadrado: o botao esta "
+          "errado - troque LOOT_BOTAO para 'direito'.")
+    print("  abriu um menu de contexto e ficou: e o cliente sem 'classic "
+          "control'; escolha 'Open' nele, ou ponha shift em LOOT_MOD.")
+    print("  NADA aconteceu com nenhum dos dois: nao havia corpo no quadrado "
+          "(fique colado nele), ou GAME_VIEW/TILE_PX estao errados para o seu "
+          "layout - rode --calib e meca.")
+    print("  o cursor nem entrou na tela do jogo: GAME_VIEW/TILE_PX errados.")
 
 
 def show_teclas():
@@ -3514,51 +3571,110 @@ def cura_paralisia(teclado, estado, paralisia_cd):
     return True
 
 
+def onde_esta_o_corpo(corpo, odo):
+    """
+    Offset em SQM do corpo, agora, a partir do personagem.
+
+    O corpo e guardado em coordenada ABSOLUTA do odometro, nao em offset. O
+    corpo nao anda: quem anda e o personagem, e offset guardado envelhece a
+    cada passo. Com a posicao absoluta a conta e sempre a mesma subtracao e nao
+    ha nada para "corrigir" - foi de onde vinham dois bugs seguidos, o offset
+    do corpo e depois o da fila de varredura.
+    """
+    if odo is None:
+        return corpo["off"]
+    return ((corpo["abs"][0] - odo.pos[0]) / MINIMAP_PX_SQM,
+            (corpo["abs"][1] - odo.pos[1]) / MINIMAP_PX_SQM)
+
+
+def clica_no_corpo(leitura, quadrado, teclado=None):
+    """
+    Clica no quadrado do corpo, com o botao configurado.
+
+    E o gesto que qualquer cliente entende, sem depender de hotkey: no Tibia o
+    botao direito sobre um corpo abre/saqueia, e o esquerdo so manda o
+    personagem andar para la. Desligando LOOT_CLICA, so a tecla e usada.
+
+    Devolve quantos cliques sairam.
+    """
+    if not LOOT_CLICA:
+        return 0
+    x, y = ponto_do_quadrado(leitura, quadrado)
+    for _ in range(max(LOOT_CLIQUES, 1)):
+        click_game(x, y, botao=LOOT_BOTAO, mod=LOOT_MOD)
+        time.sleep(LOOT_MIRA_PAUSA)
+    if LOOT_FECHA_MENU and STOP_WALK_KEY:
+        # menu de contexto aberto fica na frente e engole clique e tecla
+        if teclado is not None and not teclado.isActive:
+            focus_window(teclado)
+        pyautogui.press(STOP_WALK_KEY)
+    return max(LOOT_CLIQUES, 1)
+
+
 def loot(leitura, teclado, estado, loot_cd, odo=None):
     """
-    Vai ate o corpo do bicho que acabou de morrer e aperta a tecla de saque.
+    Vai ate o corpo do bicho que acabou de morrer, clica nele e saqueia.
 
-    O que se guarda, no momento da morte, e ONDE o bicho estava - o corpo nao
-    tem barra de vida, entao depois de morto o bot nao tem como enxerga-lo. Dai
-    e caminho: em stand o personagem ja esta colado e a tecla resolve; em kite
-    ele esta a KITE_DIST de distancia e precisa chegar.
+    IGUAL NOS TRES MODOS de luta. O corpo nao tem barra de vida: depois de
+    morto o bot nao tem como enxerga-lo, entao o que vale e a posicao guardada
+    em vida. Em stand o personagem ja esta colado; em chase e kite ele esta
+    longe e precisa chegar - mas o gesto e o mesmo, e por isso mora tudo aqui,
+    fora de qualquer ramo por modo.
+
+    A FILA E DE VARIOS CORPOS. Guardar um so deixava no chao todo bicho da
+    briga menos o ultimo, e numa caverna se mata em grupo.
+
+    So roda com a battle list LIMPA, e nao logo depois de cada morte. Tres
+    razoes: clique no mapa ou na tela durante o ataque troca o modo de luta de
+    chase para stand no cliente; parado em cima do corpo com bicho vivo em
+    volta o personagem apanha de graca; e corpo no Tibia dura minutos, entao
+    nao ha pressa nenhuma.
 
     Devolve True enquanto estiver cuidando do loot - e assim que o trajeto da
     rota fica esperando, em vez de sair andando e deixar o dinheiro no chao.
     """
-    onde = estado.get("loot_onde")
-    if not ENABLE_LOOT or onde is None:
+    corpos = estado.get("corpos") or []
+    if not ENABLE_LOOT or not corpos:
         return False
 
-    # o corpo nao anda: o que muda e a posicao do personagem, e o offset dele
-    # acompanha o odometro
-    if odo is not None and "loot_pos" in estado:
-        andou = (odo.pos[0] - estado["loot_pos"][0],
-                 odo.pos[1] - estado["loot_pos"][1])
-        onde = (onde[0] - andou[0] / MINIMAP_PX_SQM,
-                onde[1] - andou[1] / MINIMAP_PX_SQM)
-        estado["loot_onde"] = onde
-        estado["loot_pos"] = tuple(odo.pos)
+    # corpo velho demais nao vale a viagem: ele ficou para tras na rota e ir
+    # atras dele e sair do caminho por nada
+    agora = time.time()
+    while corpos and agora - corpos[0]["desde"] > LOOT_VALIDADE:
+        velho = corpos.pop(0)
+        print(f"[loot] corpo de {agora - velho['desde']:.0f}s atras ficou para "
+              f"tras na rota; largo ele")
+    if not corpos:
+        return False
 
+    corpo = corpos[0]
+    # O PRAZO CONTA DE QUANDO O BOT COMECOU NESTE CORPO, e nao da morte. Contado
+    # da morte, uma briga de tres bichos condenava os dois ultimos: eles morrem
+    # no mesmo instante e o prazo deles vencia enquanto o primeiro era saqueado.
+    # Medido: de tres corpos na fila, um era largado sem receber um clique.
+    if corpo.get("comecou") is None:
+        corpo["comecou"] = agora
+    onde = onde_esta_o_corpo(corpo, odo)
     distancia = max(abs(onde[0]), abs(onde[1]))
+
     if distancia > LOOT_DIST:
         # O PRAZO VALE AQUI, e so aqui: e o tempo de CHEGAR no corpo. Uma vez
-        # dentro do alcance, a varredura tem fila finita e drena sozinha, entao
+        # dentro do alcance a varredura tem fila finita e drena sozinha, entao
         # nao precisa de prazo e nao pode ser cortada pela metade - senao o
         # corpo fica com metade do loot dentro.
         #
-        # Este teste ficava antes da divisao e era pulado enquanto houvesse fila
-        # montada. Resultado: corpo que saia do alcance com a varredura
-        # comecada prendia o bot para sempre, porque loot() devolvendo True
-        # SEGURA A ROTA. Cacada morta sem uma linha de erro.
-        if time.time() - estado.get("loot_desde", 0) > LOOT_PRAZO:
-            print(f"[loot] {LOOT_PRAZO:.0f}s tentando chegar no corpo em "
-                  f"{onde}; desisto e sigo a rota")
-            estado["loot_onde"] = None
-            estado["loot_fila"] = None
-            return False
-        # longe: anda ate o corpo. Clique no mapa, que desvia de parede, e um
-        # por parada como no resto do projeto.
+        # Ja esteve antes da divisao, valendo para os dois casos, e era pulado
+        # enquanto houvesse varredura montada. Resultado: corpo que saia do
+        # alcance com a varredura comecada prendia o bot para sempre, porque
+        # loot() devolvendo True SEGURA A ROTA. Cacada morta sem uma linha de
+        # erro.
+        if time.time() - corpo["comecou"] > LOOT_PRAZO:
+            print(f"[loot] {LOOT_PRAZO:.0f}s tentando chegar no corpo a "
+                  f"{distancia:.0f} SQM; desisto dele"
+                  + (f" e vou no proximo ({len(corpos) - 1} na fila)"
+                     if len(corpos) > 1 else " e sigo a rota"))
+            corpos.pop(0)
+            return bool(corpos)
         if odo is not None and odo.parado < WALK_STOP_TICKS:
             return True
         if not loot_cd.ready():
@@ -3566,8 +3682,8 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
         passo = (int(round(onde[0] * MINIMAP_PX_SQM)),
                  int(round(onde[1] * MINIMAP_PX_SQM)))
         if abs(passo[0]) + abs(passo[1]) == 0:
-            estado["loot_onde"] = None
-            return False
+            corpos.pop(0)
+            return bool(corpos)
         click_minimap(leitura, passo)
         loot_cd.mark()
         print(f"[loot] corpo a {distancia:.0f} SQM: ando ate ele")
@@ -3578,16 +3694,32 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     if not teclado.isActive:
         focus_window(teclado)
 
-    # chegou: agora e varrer os quadrados, do estimado para fora. A fila e
-    # montada uma vez por corpo e consumida algumas por leitura - varrer tudo
+    quadrado = (int(round(onde[0])), int(round(onde[1])))
+
+    # 1) CLICAR NO BICHO, uma vez por corpo. Nao se varre o anel com clique:
+    # clique direito em chao vazio abre menu de contexto, e nove menus abertos
+    # atravancam o cliente.
+    if not corpo.get("clicou"):
+        corpo["clicou"] = True
+        if dentro_da_tela(quadrado):
+            n = clica_no_corpo(leitura, quadrado, teclado)
+            if n:
+                print(f"[loot] cliquei {n}x com o botao {LOOT_BOTAO} no corpo "
+                      f"em {quadrado}"
+                      + (f" (com {LOOT_MOD})" if LOOT_MOD else ""))
+                loot_cd.mark()
+                return True
+
+    # 2) A TECLA, varrendo o anel. A posicao do corpo e estimada e erra por
+    # 1 SQM com facilidade; a tecla sobre chao vazio nao faz nada, entao varrer
+    # em volta e de graca. A fila e consumida algumas por leitura - varrer tudo
     # numa leitura so seguraria a cura por segundos.
-    fila = estado.get("loot_fila")
+    fila = corpo.get("fila")
     if fila is None:
         fila = fila_do_saque()
-        estado["loot_fila"] = fila
-        print(f"[loot] corpo estimado em {onde[0]:.0f},{onde[1]:.0f}: varro "
-              f"{len(set(fila))} quadrado(s) em {len(fila)} apertada(s) com "
-              f"{LOOT_HOTKEY!r}"
+        corpo["fila"] = fila
+        print(f"[loot] corpo em {quadrado}: varro {len(set(fila))} quadrado(s) "
+              f"em {len(fila)} apertada(s) com {LOOT_HOTKEY!r}"
               + (" e com o menos do numpad"
                  if LOOT_HOTKEY_NUMPAD and LOOT_HOTKEY in NUMPAD_DO_SINAL
                  else ""))
@@ -3595,32 +3727,29 @@ def loot(leitura, teclado, estado, loot_cd, odo=None):
     for _ in range(LOOT_POR_VEZ):
         if not fila:
             break
-        # a fila guarda DELTAS EM TORNO DO CORPO; o offset do personagem sai da
-        # posicao ATUAL do corpo. Guardar o offset pronto envelhecia: bastava o
+        # a fila guarda DELTAS EM TORNO DO CORPO, resolvidos aqui a partir da
+        # posicao ATUAL dele. Guardar o offset pronto envelhecia: bastava o
         # personagem andar um passo no meio da varredura para o resto dela
         # mirar um quadrado ao lado.
         delta = fila.pop(0)
-        quadrado = (int(round(onde[0])) + delta[0],
-                    int(round(onde[1])) + delta[1])
-        if not dentro_da_tela(quadrado):
+        alvo = (quadrado[0] + delta[0], quadrado[1] + delta[1])
+        if not dentro_da_tela(alvo):
             continue            # fora da area do jogo o cursor cai no painel
         # MIRAR ANTES DE APERTAR: a tecla de saque rapido age sobre o que esta
         # debaixo do cursor. Sem isso ela saia com o mouse sobre o minimapa, do
         # ultimo clique de rota, e nao pegava nada.
-        mira_mouse(*ponto_do_quadrado(leitura, quadrado))
+        mira_mouse(*ponto_do_quadrado(leitura, alvo))
         time.sleep(LOOT_MIRA_PAUSA)
         aperta_saque()
-        estado["loot_tentativas"] = estado.get("loot_tentativas", 0) + 1
+        corpo["apertadas"] = corpo.get("apertadas", 0) + 1
     loot_cd.mark()
 
     if not fila:
-        estado["loot_onde"] = None
-        estado["loot_fila"] = None
-        print(f"[loot] varredura terminada "
-              f"({estado.get('loot_tentativas', 0)} apertadas), volto para a "
-              f"rota")
-        estado["loot_tentativas"] = 0
-        return False
+        corpos.pop(0)
+        print(f"[loot] corpo saqueado ({corpo.get('apertadas', 0)} apertadas)"
+              + (f"; {len(corpos)} corpo(s) ainda na fila" if corpos
+                 else ", volto para a rota"))
+        return bool(corpos)
     return True
 
 
@@ -3630,25 +3759,40 @@ def marca_o_corpo(estado, onde, odo=None, visto_em=None):
 
     `onde` e o offset em SQM na epoca em que o bicho foi VISTO, e `visto_em` e
     onde o personagem estava naquela hora. A morte so e confirmada algumas
-    leituras depois, e ate la ele andou - sem descontar esse caminho, o bot vai
-    buscar o corpo no lugar onde o corpo estaria se ele nao tivesse se mexido.
+    leituras depois e ate la ele andou: a posicao e ancorada em `visto_em`, e
+    nao na de agora, senao o corpo fica onde ele estaria se ninguem tivesse se
+    mexido.
+
+    O que se guarda e a posicao ABSOLUTA do odometro. Offset guardado envelhece
+    a cada passo do personagem, e corrigi-lo a cada leitura foi a origem de dois
+    bugs seguidos; posicao absoluta nao precisa de correcao nenhuma.
+
+    Entra numa FILA: numa caverna se mata em grupo, e guardar um corpo so
+    deixava os outros no chao.
     """
     if not ENABLE_LOOT or onde is None:
         return
-    onde = (float(onde[0]), float(onde[1]))
-    if visto_em is not None and odo is not None:
-        andou = (odo.pos[0] - visto_em[0], odo.pos[1] - visto_em[1])
-        if abs(andou[0]) + abs(andou[1]):
-            onde = (onde[0] - andou[0] / MINIMAP_PX_SQM,
-                    onde[1] - andou[1] / MINIMAP_PX_SQM)
-            print(f"[loot] o personagem andou {andou} desde que viu o bicho; "
-                  f"o corpo esta em {onde[0]:.0f},{onde[1]:.0f}")
-    estado["loot_onde"] = (float(onde[0]), float(onde[1]))
-    estado["loot_desde"] = time.time()
-    estado["loot_tentativas"] = 0
-    estado["loot_fila"] = None            # a fila e deste corpo, nao do anterior
-    estado["loot_pos"] = tuple(odo.pos) if odo is not None else (0, 0)
-    print(f"[loot] o bicho morreu em {onde}: vou pegar o loot")
+    base = tuple(visto_em) if visto_em is not None else (
+        tuple(odo.pos) if odo is not None else (0, 0))
+    absoluto = (base[0] + float(onde[0]) * MINIMAP_PX_SQM,
+                base[1] + float(onde[1]) * MINIMAP_PX_SQM)
+    corpos = estado.setdefault("corpos", [])
+
+    # corpo repetido: duas mortes quase no mesmo lugar sao um bicho que morreu e
+    # outro que caiu em cima. Saquear o mesmo quadrado duas vezes e so perder
+    # tempo - a varredura do primeiro ja cobre o segundo.
+    for outro in corpos:
+        if (abs(outro["abs"][0] - absoluto[0])
+                + abs(outro["abs"][1] - absoluto[1])) <= MINIMAP_PX_SQM:
+            return
+
+    corpos.append({"abs": absoluto, "off": (float(onde[0]), float(onde[1])),
+                   "desde": time.time(), "comecou": None, "fila": None,
+                   "clicou": False, "apertadas": 0})
+    del corpos[:-LOOT_MAX_CORPOS]      # fila cheia: os mais velhos ja esfriaram
+    agora = onde_esta_o_corpo(corpos[-1], odo)
+    print(f"[loot] bicho morreu a {agora[0]:.0f},{agora[1]:.0f} SQM; "
+          f"{len(corpos)} corpo(s) na fila")
 
 
 def parar_de_andar(leitura, teclado=None):
@@ -4050,7 +4194,11 @@ def run_bot():
         print(f"[autocast] {len(auto_cds)} slot(s) ativos: "
               + ", ".join(f"{s['tecla']} a cada {s['intervalo']:.0f}s"
                           for s, _ in auto_cds))
-    odo = Odometro(leitura) if ENABLE_WALK else None
+    # O ODOMETRO EXISTE SEMPRE, e nao so com o andar ligado. O loot precisa
+    # dele para saber onde ficou o corpo depois de o personagem se mexer, e o
+    # loot vale nos tres modos de luta. Antes ele era criado so com ENABLE_WALK
+    # e, sem andar, o bot marcava todo corpo na origem e nunca saqueava nada.
+    odo = Odometro(leitura)
     sem_foco = False
     parou_por_bicho = False
     assinatura_vista, sem_resposta, lista_inutil = None, 0, None
@@ -4160,7 +4308,7 @@ def run_bot():
             # ONDE O BICHO ESTA, enquanto vivo: o corpo nao tem barra de vida,
             # entao depois de morto nao ha como enxerga-lo. Guardar a posicao do
             # mais perto a cada leitura e o que permite ir buscar o loot depois.
-            odo_agora = odo if odo is not None else odo_kite
+            odo_agora = odo         # existe sempre agora, nos tres modos
             if ENABLE_LOOT and entradas > 0:
                 na_tela = detect_creatures(leitura)
                 if na_tela:
@@ -4287,10 +4435,26 @@ def run_bot():
                 kite(leitura, teclado, kite_cd, evitar_lugares,
                      odo=odo_kite, estado=estado_kite)
 
-            # 5) segue o cave. A posicao e integrada SEMPRE, inclusive durante a
-            # briga: e isso que faz o reclique depois da luta cair no lugar certo.
+            # 5) A POSICAO E INTEGRADA SEMPRE, inclusive durante a briga: e
+            # isso que faz o reclique depois da luta cair no lugar certo, e e
+            # o que diz ao loot onde ficou o corpo depois de o personagem se
+            # mexer. Fora do ENABLE_WALK porque o loot nao depende de andar.
+            odo.atualiza()
+
+            # 6) LOOT, igual nos tres modos de luta. So com a battle list
+            # limpa por VARIAS leituras: clique no mapa ou na tela durante o
+            # ataque troca o modo de luta de chase para stand no cliente, e uma
+            # leitura ruim no meio da briga nao pode virar clique. Vem antes da
+            # rota - sair andando com o corpo no chao e deixar o profit para
+            # tras. Corpo no Tibia dura minutos, entao esperar nao custa nada.
+            limpo = 0 if lutando else limpo + 1
+            if not lutando and limpo >= WALK_RESUME_READS:
+                if loot(leitura, teclado, caminho, loot_cd, odo):
+                    time.sleep(LOOP_DELAY)
+                    continue
+
+            # 7) segue o cave
             if ENABLE_WALK:
-                odo.atualiza()
                 # LUTANDO NAO SE ANDA, e a razao nao e so nao puxar monstro: no
                 # cliente, tecla de direcao ou clique no mapa durante o ataque troca
                 # o modo de luta de "chase" para "stand".
@@ -4302,25 +4466,15 @@ def run_bot():
                     track_marks(leitura, caminho, andando=not lutando,
                                 odo=odo)
                 # O trajeto so volta depois de a lista ficar limpa por VARIAS
-                # leituras seguidas. Uma leitura ruim no meio da briga nao pode
-                # virar clique no mapa: no cliente, clique no mapa durante o ataque
-                # troca o modo de luta de "chase" para "stand". Perder meio segundo
-                # aqui e barato; trocar o modo do personagem, nao.
-                limpo = 0 if lutando else limpo + 1
+                # leituras seguidas - a mesma carencia do loot, contada logo
+                # acima. Perder meio segundo aqui e barato; trocar o modo de
+                # luta do personagem, nao.
                 if not lutando and limpo >= WALK_RESUME_READS:
                     if parou_por_bicho:
                         print(f"[walk] battle list limpa por {limpo} leituras, "
                               f"retomando o trajeto")
                         parou_por_bicho = False
                         caminho["cliques"] = 0
-                    # LOOT ANTES DA ROTA: sair andando com o corpo no chao e
-                    # deixar o profit para tras. Fica DENTRO desta carencia
-                    # porque o loot tambem anda de clique no mapa, e clique no
-                    # meio da briga troca chase/stand - o teste pegou o bot
-                    # clicando numa leitura ruim que a trava leu como morte.
-                    if loot(leitura, teclado, caminho, loot_cd, odo):
-                        time.sleep(LOOP_DELAY)
-                        continue
                     if rota_gravada:
                         follow_route(leitura, odo, caminho, click_cd)
                     elif USE_MAP_MARKS:
@@ -4361,8 +4515,8 @@ if __name__ == "__main__":
     parser.add_argument("--teclas", action="store_true",
                         help="Mede quais teclas de movimento andam no cliente.")
     parser.add_argument("--loot", action="store_true",
-                        help="Confere o saque: varre os 9 quadrados em volta "
-                             "com as duas teclas de menos.")
+                        help="Confere o saque: varre os quadrados em volta com "
+                             "as duas teclas e depois clica neles.")
     parser.add_argument("--evitar", action="store_true",
                         help="Ensina por clique os quadrados de nao pisar.")
     parser.add_argument("--obs", action="store_true",

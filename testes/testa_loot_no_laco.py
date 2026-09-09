@@ -79,6 +79,7 @@ main.Odometro = OdoFalso
 main.client_rect = lambda win: (0, 0, 1920, 1009)
 main.grab = lambda regiao: TELA
 main.detect_marks = lambda win, mm=None, cor=None: []
+main.click_game = lambda x, y, pausa=0.09, botao="esquerdo", mod="": fita.append((quadro["i"], ("clique", botao)))
 main.is_usable = lambda win: True
 main.focus_window = lambda win: True
 main.restore_windows = lambda: None
@@ -115,12 +116,16 @@ for i, o_que in fita:
     print(f"  quadro {i:>2}: {o_que}")
 
 saques = [i for i, o in fita if o == main.LOOT_HOTKEY]
+cliques = [i for i, o in fita if isinstance(o, tuple) and o[0] == "clique"]
 miras = [i for i, o in fita if isinstance(o, tuple) and o[0] == "mira"]
 falhas = []
-print(f"\nmarcou o corpo: {'[loot] o bicho morreu' in log}")
+print(f"\nmarcou o corpo: {'[loot] bicho morreu' in log}")
 print(f"saques ({main.LOOT_HOTKEY!r}): {saques}")
 print(f"mirou o cursor: {miras}")
-if "[loot] o bicho morreu" not in log:
+print(f"clicou no corpo: {cliques}")
+if not cliques:
+    falhas.append("nunca clicou no corpo")
+if "[loot] bicho morreu" not in log:
     falhas.append("o corpo nunca foi marcado: a fiacao entre a morte e o loot "
                   "nao fecha")
 if not saques:

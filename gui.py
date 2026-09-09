@@ -4,7 +4,7 @@ gui.py - Painel de controle do bot.
 Organizacao:
   - cabecalho fixo com status e os botoes Iniciar/Parar: o que voce mais usa nao
     fica escondido dentro de aba;
-  - abas por atividade: Healing, Combate, Rota, Autocast, Setup;
+  - abas por atividade: Healing, Combate, Rota, Loot, Autocast, Setup;
   - cada bloco tem um interruptor proprio; desligado, os campos ficam
     acinzentados, para o painel mostrar o que esta valendo;
   - log embaixo, sempre visivel, espelhando a saida do bot.
@@ -89,20 +89,6 @@ ABAS = [
             ("PARAR_SE_MUDAR_ANDAR", "Parar se mudar de andar", bool,
              "caiu em escada ou buraco: para tudo"),
         ]),
-        ("Loot", "ENABLE_LOOT", [
-            ("LOOT_HOTKEY", "Tecla de saque", str,
-             "a do saque rapido, no cliente"),
-            ("LOOT_HOTKEY_NUMPAD", "Mandar tambem o numpad", bool,
-             "o - de cima e o - do numpad sao teclas diferentes"),
-            ("LOOT_DIST", "Saquear a partir de", int,
-             "SQM: daqui a tecla alcanca o corpo"),
-            ("LOOT_VARRE", "Varrer os quadrados em volta", bool,
-             "a posicao do corpo e estimada e erra por 1 SQM"),
-            ("LOOT_TENTATIVAS", "Apertadas por quadrado", int,
-             "o saque pega um item por vez"),
-            ("LOOT_PRAZO", "Desistir do corpo depois de", float,
-             "segundos tentando chegar nele"),
-        ]),
         ("Combo de magia", "ENABLE_SPELL", [
             ("SPELL_HOTKEY", "Magia do combo", str, "entra entre os turnos"),
             ("SPELL_COOLDOWN", "Cooldown da magia", float, "segundos"),
@@ -127,6 +113,41 @@ ABAS = [
              "antes de trocar de marca"),
             ("MINIMAP_PX_SQM", "Escala do minimapa", float,
              "px por SQM; meca com --zoom"),
+        ]),
+    ]),
+    ("Loot", [
+        # Aba propria: o saque nao e parte de como lutar. Ele acontece DEPOIS
+        # da briga, com a battle list limpa, e e igual em stand, chase e kite -
+        # o modo de luta muda de onde se parte, nao o que se faz com o corpo.
+        ("Ir no corpo e clicar", "ENABLE_LOOT", [
+            ("LOOT_CLICA", "Clicar no corpo", bool,
+             "no cliente, o botao direito no corpo abre/saqueia"),
+            ("LOOT_BOTAO", "Botao do clique", str,
+             "direito ou esquerdo"),
+            ("LOOT_MOD", "Segurar junto", str,
+             "shift, ctrl, alt ou vazio"),
+            ("LOOT_CLIQUES", "Cliques por corpo", int,
+             "1 basta; o anel em volta e varrido com a tecla"),
+            ("LOOT_DIST", "Chegar a", int,
+             "SQM do corpo antes de clicar"),
+            ("LOOT_MAX_CORPOS", "Corpos na fila", int,
+             "numa caverna se mata em grupo"),
+            ("LOOT_PRAZO", "Desistir de um corpo depois de", float,
+             "segundos tentando chegar nele"),
+            ("LOOT_VALIDADE", "Largar corpo mais velho que", float,
+             "segundos: o de tras na rota nao vale a viagem"),
+        ]),
+        ("Tecla de saque", None, [
+            ("LOOT_HOTKEY", "Tecla", str,
+             "a do saque rapido, no cliente"),
+            ("LOOT_HOTKEY_NUMPAD", "Mandar tambem o numpad", bool,
+             "o - de cima e o - do numpad sao teclas diferentes"),
+            ("LOOT_VARRE", "Varrer os quadrados em volta", bool,
+             "a posicao do corpo e estimada e erra por 1 SQM"),
+            ("LOOT_TENTATIVAS", "Apertadas por quadrado", int,
+             "o saque pega um item por vez"),
+            ("LOOT_MAX_APERTADAS", "Teto de apertadas por corpo", int,
+             "acao demais em pouco tempo e enxurrada para o servidor"),
         ]),
     ]),
     ("Autocast", [

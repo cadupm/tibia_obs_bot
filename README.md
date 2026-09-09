@@ -47,81 +47,74 @@ serve de freio de mão.
 | aba | o que tem |
 | --- | --- |
 | Healing | vida/mana máximas, cura, cura de emergência, poção de mana |
-| Combate | como lutar (stand/chase/kite), tecla de atacar, loot, combo de magia, lista de monstros |
+| Combate | como lutar (stand/chase/kite), tecla de atacar, kite, combo de magia, lista de monstros |
+| Loot | ir no corpo e clicar, tecla de saque, fila de corpos |
 | Rota | marcas do mapa, rota gravada, tecla de parar de andar |
 | Autocast | até 4 teclas em intervalo fixo (pá, comida, buff) |
 | Setup | título do projetor, tecla de parada, intervalo do loop |
 
 ### Loot
 
-`ENABLE_LOOT`, na aba Combate. Escolhi a **tecla** de saque rápido do cliente
-(`LOOT_HOTKEY`, padrão `-`) e não o clique direito no corpo: a tecla não precisa
-de coordenada nenhuma nem de acertar item em menu, e o corpo **não tem barra de
-vida** — depois de morto, o bot não tem como enxergá-lo na tela.
+`ENABLE_LOOT`, na aba **Loot** — aba própria, porque saquear não é parte de como
+lutar: acontece **depois** da briga e é **igual** em stand, chase e kite. O modo
+de luta muda de onde se parte, não o que se faz com o corpo.
 
-O que o bot faz é a parte que falta: **chegar perto**. A posição do bicho é
-guardada enquanto ele está vivo, e no momento da morte vira o destino. Em
-`stand` o personagem já está colado e a tecla resolve; em `kite` ele está a
-`KITE_DIST` de distância e precisa andar até lá. O offset do corpo acompanha o
-personagem pelo odômetro — o corpo não anda, quem anda é ele.
+O gesto é: chegar no corpo, **clicar nele**, e varrer a tecla de saque em volta.
+O clique (`LOOT_CLICA`, botão direito por padrão) é o que qualquer cliente
+entende — no Tibia o botão direito sobre um corpo abre/saqueia, e o esquerdo só
+manda o personagem andar para lá. A tecla depende de estar configurada no
+cliente, então ela entra como reforço, não como aposta única.
 
-**A tecla age sobre o que está debaixo do cursor**, então o bot mira o mouse no
-quadrado do corpo antes de apertar. Sem isso ela saía com o mouse onde quer que
-ele tivesse ficado — em geral sobre o minimapa, do último clique de rota — e não
-pegava nada.
+**Não se varre o anel a clique.** Clique direito em chão vazio abre menu de
+contexto, e nove menus abertos atravancam o cliente. Um clique no quadrado
+estimado, e o anel em volta com a **tecla**, que sobre chão vazio não faz nada.
+Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): menu aberto fica na frente e
+engole clique e tecla.
 
-**A posição do corpo desconta o caminho andado.** A morte só é confirmada
-`TARGET_GONE_READS` leituras depois de a entrada sumir da battle list, e até lá
-o personagem andou (kitando, principalmente). O bot guarda *onde ele estava* na
-hora em que viu o bicho e desconta esse trajeto — senão vai buscar o corpo onde
-o corpo estaria se ele não tivesse se mexido.
+**A fila é de vários corpos** (`LOOT_MAX_CORPOS`). Guardar um só deixava no chão
+todo bicho da briga menos o último, e numa caverna se mata em grupo.
+
+**O corpo é guardado em coordenada absoluta do odômetro, não em offset.** O
+corpo não anda: quem anda é o personagem, e offset guardado envelhece a cada
+passo. Corrigir esse envelhecimento a cada leitura foi a origem de dois bugs
+seguidos — o offset do corpo e depois o da fila de varredura. Posição absoluta
+não precisa de correção nenhuma: a conta é sempre a mesma subtração.
+
+**Por que esperar a battle list limpar**, em vez de saquear a cada morte: no
+cliente, clique no mapa ou na tela durante o ataque troca o modo de luta de
+*chase* para *stand*; parado em cima do corpo com bicho vivo em volta o
+personagem apanha de graça; e corpo no Tibia dura minutos, então não há pressa.
+
+**O prazo conta de quando o bot chega naquele corpo**, não da morte. Contado da
+morte, uma briga de três bichos condenava os dois últimos: eles morrem no mesmo
+instante e o prazo deles vencia enquanto o primeiro era saqueado. Medido: de
+três corpos na fila, um era largado sem receber um clique. Passado
+`LOOT_VALIDADE` desde a morte o corpo é largado sem tentativa — ele ficou para
+trás na rota e ir atrás dele é sair do caminho por nada.
 
 **O `-` de cima e o `-` do numpad são teclas diferentes.** Para o Windows e para
-o cliente, um é `VK_OEM_MINUS` e o outro é `VK_SUBTRACT`. Com a hotkey de saque
-configurada no numpad e o bot apertando a de cima, não acontecia nada — e o log
-não acusava, porque do lado do bot a tecla tinha sido apertada com sucesso. Foi
-uma das duas causas de "não está lootando nada". Agora o bot manda **as duas**
-(`LOOT_HOTKEY_NUMPAD`): tecla que o cliente não usa não faz nada, então mandar a
-gêmea é mais barato do que descobrir qual é.
+o cliente, um é `VK_OEM_MINUS` e o outro é `VK_SUBTRACT`. Com a hotkey no numpad
+e o bot apertando a de cima, não acontecia nada — e o log não acusava, porque do
+lado do bot a tecla tinha sido apertada com sucesso. Agora ele manda **as duas**
+(`LOOT_HOTKEY_NUMPAD`): tecla que o cliente não usa não faz nada.
 
-**O bot varre os quadrados em volta, não aposta num só** (`LOOT_VARRE`). A
-posição do corpo é uma estimativa — vem do odômetro e de uma barra de vida lida
-uma leitura antes da morte — e errar por 1 SQM é comum. Saque num quadrado
-vizinho ao corpo não pega nada, que era a outra causa. Varrer os 9 quadrados
-custa uma apertada de tecla sobre chão vazio, o que não custa nada, e transforma
-"errou por 1" em "pegou". Vai do estimado para fora, `LOOT_POR_VEZ` por leitura —
-a varredura inteira de uma vez seguraria a cura por segundos.
+**A tecla age sobre o que está debaixo do cursor**, então o bot mira o mouse no
+quadrado antes de apertar. Sem isso ela saía com o mouse onde quer que ele
+tivesse ficado — em geral sobre o minimapa, do último clique de rota.
 
-O loot roda **antes** da rota e dentro da mesma carência dela: sair andando com
-o corpo no chão é deixar o profit para trás, e o loot também anda de clique no
-mapa — clique no meio da briga trocaria *chase* por *stand*. Não chegando no
-corpo em `LOOT_PRAZO`, ele desiste: corpo em cima de escada, ou bicho novo no
-caminho, é loot que não vale a caçada. O prazo vale para **chegar** no corpo, não
-para varrê-lo: varredura em andamento não se corta pela metade, senão metade do
-loot fica dentro do corpo.
+A fila de apertadas é em **rodadas do anel inteiro**, não em blocos por
+quadrado, e tem teto (`LOOT_MAX_APERTADAS`). Em blocos, o teto cortaria os
+últimos quadrados sem nenhuma tentativa — e o quadrado certo pode ser justamente
+um deles. O teto existe porque 9 quadrados × 3 apertadas × 2 teclas dava 54
+ações em ~4 s, muito acima do que uma pessoa faz.
 
-A fila de saque é montada em **rodadas do anel inteiro**, não em blocos por
-quadrado, e tem teto (`LOOT_MAX_APERTADAS`, 24). Em blocos, o teto cortaria os
-últimos quadrados sem nenhuma tentativa — e o quadrado certo pode ser
-justamente um deles. Em rodadas, cortar no teto só tira repetição. O teto existe
-porque 9 quadrados × 3 apertadas × 2 teclas dava 54 ações em ~4 s, muito acima
-do que uma pessoa faz, e o servidor tem proteção contra enxurrada de ação.
-
-Os quadrados da fila são **deltas em torno do corpo**, resolvidos na hora de
-apertar. Guardar o offset pronto envelhecia: bastava o personagem andar um passo
-no meio da varredura para todo o resto dela mirar um quadrado ao lado —
-justamente o erro que a varredura existe para cobrir.
-
-Não pegou nada na caçada? `python main.py --loot` confere as três coisas que o
-log não separa — a tecla, a mira e a geometria da tela. Mate um bicho, fique
-colado no corpo e rode: ele varre os 9 quadrados com as duas teclas, dizendo em
-qual está mirando. O quadrado que abrir a bolsa é o certo.
+Não pegou nada na caçada? `python main.py --loot` confere tecla, clique e
+geometria da tela com um corpo do lado, e diz como ler cada resultado.
 
 **Limitação conhecida:** com vários bichos na tela, o corpo marcado é o do mais
-perto na leitura em que a lista ainda o tinha — e com dois bichos igualmente
-colados, esse pode ser o sobrevivente. A varredura em volta cobre o caso comum
-(os dois lado a lado); separar de verdade exigiria seguir a identidade de cada
-criatura entre quadros, que o bot não faz.
+perto na leitura em que a lista ainda o tinha — e com dois igualmente colados,
+esse pode ser o sobrevivente. A varredura em volta cobre o caso comum; separar
+de verdade exigiria seguir a identidade de cada criatura entre quadros.
 
 ### Como lutar: stand, chase ou kite
 
@@ -374,6 +367,14 @@ sai primeiro, que é a prioridade, e o resto da leitura continua.
 
 O código está comentado com o *porquê* de cada uma delas.
 
+- **Dependência escondida vale por defeito.** O loot era chamado dentro do
+  `if ENABLE_WALK:`, e o odômetro só era criado com esse mesmo interruptor
+  ligado. Resultado: com o andar desligado o bot não saqueava **nada**, nos três
+  modos de luta, e nada no log dizia por quê. Medido rodando o laço nas seis
+  combinações de modo × andar: antes, 0 miradas e 0 saques nas três com o andar
+  desligado; depois, gesto idêntico nas seis. Nenhuma dessas duas amarras tinha
+  a ver com saquear.
+
 - **Um teste que reprova a decisão certa não mede o bot, mede o próprio ruído.**
   O cenário da caverna em C com brigas vinha reprovando: passava em 3 de 12
   sementes, e várias "falhas" tinham a varredura completa e correta.
@@ -495,8 +496,11 @@ python testes/testa_kite_perseguicao.py  # clique de longe, seta de perto
 python testes/testa_andar.py          # percebe a queda, aprende o quadrado, não repete
 python testes/testa_teclas_config.py  # trocar as teclas das diagonais não derruba
 python testes/testa_erro_no_laco.py   # erro isolado não mata a caçada
-python testes/testa_loot.py           # vai até o corpo, varre os quadrados, volta à rota
+python testes/testa_loot.py           # vai até o corpo, clica, varre, esvazia a fila
 python testes/testa_loot_no_laco.py   # o loot no laço inteiro: morreu -> marcou -> saqueou
+python testes/testa_loot_modos.py     # o mesmo saque em stand/chase/kite, com e sem rota
+python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
+python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI
 python testes/testa_briga_dentes.py   # os cenários de rota reprovam um bot quebrado?
 python testes/testa_heal.py           # cura começando com vida baixa; emergência na frente
