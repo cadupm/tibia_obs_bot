@@ -5564,6 +5564,13 @@ def run_bot():
                                    + onde_alvo[0] * MINIMAP_PX_SQM),
                              round(odo_agora.pos[1]
                                    + onde_alvo[1] * MINIMAP_PX_SQM))
+                    caminho["alvo_visto"] = caminho.get("leituras", 0)
+                    # A MOLDURA ESTA EM CIMA DE UM BICHO VIVO OU DE UM CORPO?
+                    # Bicho vivo tem barra de vida no quadrado; corpo nao tem.
+                    # E esta e a unica coisa que separa os dois instantes em
+                    # que a moldura pode estar quando a morte fecha - ela ainda
+                    # em cima do que acabou de morrer, ou ja no proximo.
+                    viva = onde_alvo in agora_barras
                     atual = caminho.get("alvo_mundo")
                     if atual is None or atual[0] != lugar:
                         # A MOLDURA PULA PARA O PROXIMO BICHO NA MESMA LEITURA
@@ -5574,7 +5581,7 @@ def run_bot():
                         caminho["alvo_antes"] = atual
                         caminho["alvo_pulou"] = caminho.get("leituras", 0)
                     caminho["alvo_mundo"] = (lugar,
-                                             caminho.get("leituras", 0))
+                                             caminho.get("leituras", 0), viva)
                 # O PRIMEIRO QUADRO COM ALVO da sessao, cru. E nele que se ve a
                 # moldura vermelha que o cliente desenha no bicho atacado - o
                 # unico desenho da tela que e ALINHADO AO QUADRADO, e por isso
@@ -5698,12 +5705,43 @@ def run_bot():
                 # explica o sumico do outro e nao da para saber qual foi, e o
                 # bot desiste do corpo para nao chutar. A moldura nao tem esse
                 # problema, e vale igual com um bicho ou com cinco.
-                marca = caminho.get("alvo_mundo") if quero else None
-                if (marca is not None
-                        and caminho.get("alvo_pulou") == caminho.get(
-                            "leituras", 0)):
-                    marca = caminho.get("alvo_antes")   # ela ja pulou: vale a
-                    #                                     de antes do pulo
+                # QUAL DAS DUAS POSICOES DA MOLDURA E O CORPO. Depende de
+                # ela existir agora ou nao, e nao de QUANDO ela pulou:
+                #
+                #   ha moldura na tela  -> o cliente ja re-engajou, ela esta em
+                #     cima de um bicho VIVO, e o corpo e a posicao ANTERIOR;
+                #   nao ha moldura      -> o alvo simplesmente sumiu (era o
+                #     ultimo da lista), e o corpo e a ULTIMA posicao dela.
+                #
+                # Ja foi "ela pulou nesta leitura?", e isso so acertava quando
+                # o pulo e a saida da battle list caiam na MESMA leitura. Sao
+                # dois eventos do cliente, e a 25 leituras por segundo eles
+                # quase nunca caem juntas - dai so a ultima morte de cada briga
+                # saia no lugar certo, que e justamente aquela em que a moldura
+                # nao pula: ela some.
+                # QUAL DAS DUAS POSICOES DA MOLDURA E O CORPO. Nao adianta
+                # perguntar QUANDO ela pulou: o pulo da moldura e a saida da
+                # battle list sao dois eventos do cliente, e a 25 leituras por
+                # segundo eles caem em leituras diferentes - as vezes o pulo
+                # vem antes, as vezes depois. Medido nos dois sentidos: uma
+                # regra baseada em "pulou nesta leitura" acerta um e erra o
+                # outro.
+                #
+                # A pergunta que responde nos dois casos e OUTRA: a moldura
+                # esta em cima de um bicho VIVO? Bicho vivo tem barra de vida
+                # no quadrado, corpo nao tem.
+                #
+                #   com barra  -> o cliente ja re-engajou, e o corpo e a
+                #                 posicao ANTERIOR da moldura;
+                #   sem barra  -> ela ainda esta em cima do que acabou de
+                #                 morrer (ou sumiu junto com ele), e o corpo e
+                #                 ali mesmo.
+                marca = None
+                if quero:
+                    atual = caminho.get("alvo_mundo")
+                    marca = (caminho.get("alvo_antes")
+                             if atual is not None and len(atual) > 2
+                             and atual[2] else atual)
                 fresca = (marca is not None and odo_agora is not None
                           and caminho.get("leituras", 0) - marca[1]
                           <= TARGET_GONE_READS + 2)

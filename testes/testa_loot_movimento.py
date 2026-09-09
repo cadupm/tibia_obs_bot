@@ -119,16 +119,22 @@ def moldura_do_alvo(img, off):
     return img
 
 
-def tela(vivos, corpos, alvo=None):
-    """Vivos de pe com barra; corpos como cadaver, SEM barra e SEM nome."""
+def tela(vivos, corpos, moldura=None):
+    """Vivos de pe com barra; corpos como cadaver, SEM barra e SEM nome.
+
+    `moldura` e o QUADRADO em que o cliente esta desenhando a moldura vermelha,
+    e nao o indice de um bicho: ela pode ficar um instante em cima de um bicho
+    que ja saiu da battle list, ou ja ter pulado para o proximo antes de ele
+    sair. Sao dois eventos diferentes do cliente.
+    """
     img = CHAO.copy()
     for off in corpos:
         desenha(img, off, (95, 75, 55))
     for off in vivos.values():
         desenha(img, off, (170, 40, 40))
         barra(img, off)
-    if alvo is not None and alvo in vivos:
-        moldura_do_alvo(img, vivos[alvo])
+    if moldura is not None:
+        moldura_do_alvo(img, moldura)
     return img
 
 
@@ -219,9 +225,29 @@ class OdoFalso:
         return False
 
 
-def roda(arranjo, mexe_na_morte=False, autotarget=True):
+def roda(arranjo, mexe_na_morte=False, autotarget=True, atraso=0):
+    """
+    `atraso` desloca a MOLDURA em relacao a battle list, em leituras.
+
+    O pulo da moldura para o proximo bicho e a saida da entrada da battle list
+    sao dois eventos do cliente, e a 25 leituras por segundo eles quase nunca
+    caem na mesma leitura. Com atraso 0 caem; com +1 a moldura fica um instante
+    em cima do que ja morreu; com -1 ela pula antes de a entrada sair.
+    """
     quadros, mortes = monta_quadros(arranjo, mexe_na_morte, autotarget)
-    telas = [tela(v, c, a) for v, c, _l, a in quadros]
+    # onde a moldura esta em cada leitura, seguindo o alvo daquele quadro
+    onde_moldura = []
+    for vivos, _c, _l, alvo in quadros:
+        onde_moldura.append(vivos.get(alvo) if alvo is not None else None)
+    if atraso:
+        if atraso > 0:
+            onde_moldura = ([onde_moldura[0]] * atraso
+                            + onde_moldura[:-atraso])
+        else:
+            onde_moldura = (onde_moldura[-atraso:]
+                            + [onde_moldura[-1]] * -atraso)
+    telas = [tela(v, c, m)
+             for (v, c, _l, _a), m in zip(quadros, onde_moldura)]
     roteiro = [(len(lista), alvo is not None,
                 0.9 if alvo is not None else None,
                 [SPRITES[i] for i in lista],
@@ -383,6 +409,41 @@ for arranjo in ARRANJOS:
             f"sem autotarget, {arranjo['nome']}: {len(r['andadas'])} "
             f"clique(s) de ANDAR {r['andadas']} - o bot indo atras de corpo "
             f"que nao existe, que e o que faz ele passar do monstro")
+
+# ------------------- a moldura fora de sincronia com a battle list
+print(chr(10) + "A MOLDURA E A BATTLE LIST SAO DOIS EVENTOS DO CLIENTE, e a 25"
+      + chr(10) + "leituras por segundo quase nunca caem na mesma leitura:")
+print(f"  {'atraso da moldura':<20} {'corpos marcados':<26} {'certos':<7} "
+      f"saques")
+for atraso in (-1, 0, 1, 2):
+    # COM o cliente re-engajando sozinho: e o caso em que a moldura PULA de
+    # um bicho para o outro, em vez de sumir. Sem autotarget ela some entre uma
+    # morte e a proxima, e ai nao ha com o que confundir - o teste passaria sem
+    # medir nada.
+    r = roda(ARRANJOS[0], autotarget=True, atraso=atraso)
+    esperados = sorted(r["mortes"])
+    # comparacao de MULTICONJUNTO: marcar duas vezes o mesmo quadrado e
+    # perder outro nao pode contar como acerto
+    sobrando = list(esperados)
+    certos = 0
+    for q in r["marcados"]:
+        if q in sobrando:
+            sobrando.remove(q)
+            certos += 1
+    rotulo = {0: "juntas"}.get(atraso, f"{atraso:+d} leitura")
+    print(f"  {rotulo:<20} {str(sorted(r['marcados'])):<26} "
+          f"{certos}/{len(esperados):<5} {len(r['saques'])}")
+    if os.environ.get("VERBOSO"):
+        for l in r["log"].splitlines():
+            if "[loot]" in l:
+                print("      " + l)
+    if sorted(r["marcados"]) != esperados:
+        falhas.append(
+            f"moldura com atraso de {atraso} leitura(s): marcou "
+            f"{sorted(r['marcados'])}, esperava {esperados}. So a ULTIMA morte "
+            f"de cada briga tem a moldura SUMINDO em vez de pulando - se o "
+            f"resto so acerta quando os dois eventos caem juntos, e so a "
+            f"ultima que sai no lugar certo")
 
 # ---------------------------------------------------- a leitura ambigua
 amb = roda(ARRANJOS[0], mexe_na_morte=True)
