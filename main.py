@@ -4925,9 +4925,14 @@ def run_bot():
                     # quadrado com como ele estava aqui diz onde o bicho caiu
                     # sem tentativa e erro: quem mudou e o corpo.
                     historico = caminho.setdefault("bichos_vistos", [])
+                    # QUANTAS ENTRADAS HAVIA vai junto. E o que permite achar,
+                    # na hora da morte, a ULTIMA leitura em que o bicho que
+                    # morreu ainda estava na lista - e nao um numero fixo de
+                    # leituras atras, que era um chute.
                     historico.append(
                         (tuple(odo_agora.pos) if odo_agora else (0, 0), perto,
-                         tela if LOOT_ACHA_CORPO else None, tuple(na_tela)))
+                         tela if LOOT_ACHA_CORPO else None, tuple(na_tela),
+                         entradas))
                     del historico[:-(TARGET_GONE_READS + 2)]
             if ENABLE_LOOT and trava.morreu:
                 trava.morreu = False
@@ -4966,8 +4971,29 @@ def run_bot():
                     # enchendo, e "o ultimo" passa a ser DEPOIS da morte.
                     # Medido: tres bichos mortos, um corpo gravado, dois com
                     # diferenca 0.
-                    quantos_atras = min(TARGET_GONE_READS + 1, len(historico))
-                    visto_em, onde, tela_antes, havia = historico[-quantos_atras]
+                    # A ULTIMA LEITURA EM QUE ELE AINDA ESTAVA NA LISTA, achada
+                    # pela CONTAGEM de entradas, e nao por um numero fixo de
+                    # leituras atras.
+                    #
+                    # Era historico[-(TARGET_GONE_READS + 1)] - um chute. Com
+                    # bicho SOBREVIVENTE na lista, o historico continua
+                    # enchendo depois da morte e esse chute caia no lugar certo
+                    # por coincidencia. Com UM BICHO SO ele para de crescer
+                    # quando a lista esvazia, e o chute caia QUATRO leituras
+                    # antes da morte - 0.6s mais o debounce, tempo de sobra
+                    # para o bicho andar. O bot ia buscar o corpo onde o bicho
+                    # estava quando foi ENGAJADO, e nao onde ele morreu.
+                    #
+                    # A contagem resolve sem chute: a leitura em que ele ainda
+                    # constava e a ultima com MAIS entradas do que agora.
+                    referencia = None
+                    for item in reversed(historico):
+                        if item[4] > entradas:
+                            referencia = item
+                            break
+                    if referencia is None:
+                        referencia = historico[-1]
+                    visto_em, onde, tela_antes, havia, _e = referencia
                     # ACHAR NA TELA. O palpite da odometria erra por 1 SQM com
                     # facilidade, e era por isso que o bot varria o anel por
                     # tentativa e erro. Comparando o quadrado com como ele

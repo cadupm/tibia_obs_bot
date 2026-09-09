@@ -98,6 +98,20 @@ A comparação de imagem ficou como **reserva**, para quando nenhuma barra sumiu
 tela — o bicho morreu fora dela, ou a leitura de referência não o pegou. O log
 diz qual dos dois decidiu.
 
+**A leitura de referência é a última em que ele ainda constava da lista**, achada
+pela **contagem de entradas** e não por um número fixo de leituras atrás. Era
+`historico[-(TARGET_GONE_READS + 1)]` — um chute. Com bicho sobrevivente na
+lista, o histórico continua enchendo depois da morte e o chute caía no lugar
+certo por coincidência; com **um bicho só** ele para de crescer quando a lista
+esvazia, e o chute caía quatro leituras antes da morte — 0,6 s mais o *debounce*,
+tempo de sobra para o bicho andar. O bot ia buscar o corpo onde o bicho fora
+**engajado**, não onde morreu.
+
+A contagem resolve sem chute: a leitura em que ele ainda constava é a última com
+**mais entradas do que agora**. Medido com o bicho andando de (4,0) até (1,0) e
+morrendo ali: com a regra antiga o bot marcava (4,0), o lugar do engajamento; com
+a nova, (1,0).
+
 O que substituiu a varredura: **o corpo é identificado na tela.** O quadrado onde o
 bicho estava **muda** quando ele morre (sprite de bicho → sprite de corpo), e o
 quadrado vizinho que nunca teve bicho continua igual. Quem mudou é onde caiu.
@@ -572,6 +586,15 @@ O código está comentado com o *porquê* de cada uma delas.
   procurava o corpo só no quadrado do palpite, justamente o erro que a busca
   existe para corrigir. Um teste guarda a distinção; o resto foi removido.
 
+- **Um número fixo de leituras atrás é um chute, e chute passa em teste por
+  coincidência.** A referência para localizar o corpo era "quatro leituras
+  atrás". Isso acertava quando sobrava bicho na battle list (o histórico
+  continuava enchendo e o índice caía no lugar certo) e errava com um bicho só —
+  e o teste que eu tinha usava justamente o caso com sobrevivente. O que a
+  referência precisa dizer é "a última leitura em que ele ainda constava", e isso
+  é uma **condição**, não um deslocamento: a última com mais entradas do que
+  agora.
+
 - **Antes de calibrar um limiar, procure o sinal discreto.** A localização do
   corpo vinha de comparar imagens de quadrado e ficar acima de um limiar; numa
   caçada real isso dava 14 contra 12, e eu estava a caminho de ajustar o limiar.
@@ -770,6 +793,7 @@ python testes/testa_loot_fugitivo.py  # bicho que fugiu da tela não trava o saq
 python testes/testa_loot_escolhido.py # ataca todos, saqueia só os escolhidos
 python testes/testa_calibra_barra.py  # a barra do personagem calibra a conversão barra->quadrado
 python testes/testa_barra_sumiu.py    # o corpo está onde uma barra de vida desapareceu
+python testes/testa_corpo_onde_morreu.py  # o corpo sai onde ele morreu, não onde foi engajado
 python testes/testa_gui.py            # o painel cabe na tela e tudo nele é alcançável
 python testes/testa_sem_console.py    # o painel escreve no log sem console (pythonw)
 python testes/testa_config.py         # o config.json vale também fora da GUI
