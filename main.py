@@ -2996,6 +2996,28 @@ class TravaDeAlvo:
         if alvo and alvo_sprite is not None:
             trocou = self.sprite is None or not sprite_igual(self.sprite,
                                                              alvo_sprite)
+            # A MOLDURA PASSOU PARA OUTRO E O ANTIGO SAIU DA LISTA: ele morreu,
+            # e nao ha o que esperar - sao dois sinais independentes de uma vez.
+            #
+            # Sem isto, a troca de alvo APAGAVA a suspeita: a contagem acusava
+            # a queda, o sprite rastreado era substituido na mesma leitura, e a
+            # leitura seguinte contava o sprite NOVO, que estava presente. A
+            # suspeita nascia e morria a cada morte, e nenhuma fechava. Medido
+            # em isolamento, com quatro bichos e a moldura passando adiante:
+            # zero mortes detectadas. Na cacada isso aparecia como "com tres
+            # para saquear ele vai so no ultimo" - o ultimo e o unico cuja
+            # morte deixa a lista VAZIA, e ai a contagem tem tempo de fechar.
+            if (trocou and self.sprite is not None and not self.morreu
+                    and not any(sprite_igual(sp, self.sprite)
+                                for sp in sprites)):
+                sobraram = sum(1 for sp in sprites
+                               if sprite_igual(sp, self.sprite))
+                print(f"[attack] a moldura passou para outro bicho e o que eu "
+                      f"atacava saiu da battle list: ele morreu")
+                self.morreu = True
+                self.mortos = max(self.iguais - sobraram, 1)
+                self.morto_sprite = self.sprite
+                self.sumidas = 0
             self.sprite = alvo_sprite
             # NAO MEXER NA CONTAGEM COM QUEDA PENDENTE. Ela e a referencia da
             # suspeita de morte, e refresca-la a cada leitura apagava a
@@ -5005,14 +5027,43 @@ def run_bot():
                     print(f"[loot] "
                           + (f"'{quem}'" if quem else "bicho nao reconhecido")
                           + " nao esta marcado para saque; ignoro o corpo")
-                    caminho["bichos_vistos"] = []
+                    # DESCARTA O PONTO DE MORTE DESTE, e nada mais. Antes isso
+                    # apagava bichos_vistos, que e a referencia COMPARTILHADA
+                    # de todos os bichos - as mortes seguintes ficavam sem
+                    # referencia e os corpos delas nunca eram marcados. Era a
+                    # causa de "com tres para saquear e um sem, ele vai so no
+                    # ultimo".
+                    anotados = caminho.get("sumiram") or []
+                    del anotados[-max(mortos_agora, 1):]
                 historico = (caminho.get("bichos_vistos") or []) if quero else []
                 # O AVISO DE "NUNCA VI NA TELA" NAO VALE quando quem descartou
                 # foi o FILTRO: eram dois motivos diferentes saindo com a mesma
                 # frase, e o log ficava culpando a deteccao de tela que nem
                 # tinha sido consultada.
                 avisa_sem_ver = quero
-                if historico:
+                # O REGISTRO DE BARRAS QUE SUMIRAM VALE SOZINHO. Ele tem o
+                # quadrado exato da morte, anotado na leitura em que a barra
+                # desapareceu, e nao depende da historia de leituras para nada.
+                # Ficava dentro do `if historico:` junto com a comparacao de
+                # imagem, e com historia vazia nenhum corpo era marcado mesmo
+                # havendo posicao exata guardada.
+                anotados = (caminho.get("sumiram") or []) if quero else []
+                if anotados and odo_agora:
+                    usa = anotados[-max(mortos_agora, 1):]
+                    quadrados = [
+                        (round((lugar[0] - odo_agora.pos[0]) / MINIMAP_PX_SQM),
+                         round((lugar[1] - odo_agora.pos[1]) / MINIMAP_PX_SQM))
+                        for lugar, _t in usa]
+                    del caminho["sumiram"][-len(usa):]
+                    print(f"[loot] {mortos_agora} morte(s); a barra de vida "
+                          f"sumiu em {quadrados}: e ali que os corpos estao")
+                    for quadrado_corpo in quadrados:
+                        marca_o_corpo(caminho, quadrado_corpo, odo_agora,
+                                      na_tela=True)
+                    if LOOT_NA_HORA:
+                        saque_na_hora(leitura, teclado, caminho, loot_cd,
+                                      odo_agora)
+                elif historico:
                     # O QUADRO DE ANTES DA MORTE, e nao o mais recente. A morte
                     # so e confirmada TARGET_GONE_READS leituras depois de a
                     # entrada sumir, e nesse meio-tempo o quadro ja mostra o
@@ -5073,26 +5124,11 @@ def run_bot():
                         # sumiu ou nao - sem limiar para calibrar no ruido.
                         agora_tela = viewport(leitura)
                         na_tela_pos = detect_creatures(leitura, img=agora_tela)
-                        # O REGISTRO DO INSTANTE DA MORTE vem primeiro: os
-                        # quadrados em que a barra sumiu, anotados na leitura em
-                        # que sumiram e guardados em coordenada de mundo. Sao
-                        # os mais recentes, porque a morte que se esta
-                        # confirmando agora e a ultima que aconteceu.
-                        anotados = caminho.get("sumiram") or []
-                        usa = anotados[-mortos_agora:] if anotados else []
-                        sumiram = [(round((lugar[0] - odo_agora.pos[0])
-                                          / MINIMAP_PX_SQM),
-                                    round((lugar[1] - odo_agora.pos[1])
-                                          / MINIMAP_PX_SQM))
-                                   for lugar, _t in usa] if odo_agora else []
-                        if sumiram:
-                            del caminho["sumiram"][-len(usa):]
-                        else:
-                            # sem registro (a barra nunca foi vista sumir): a
-                            # comparacao entre a leitura de referencia e a de
-                            # agora ainda pode achar
-                            sumiram = barras_que_sumiram(havia, na_tela_pos,
-                                                         andado)
+                        # aqui o registro do instante da morte JA FOI
+                        # consumido (ou nunca existiu): o que resta e comparar
+                        # a leitura de referencia com a de agora
+                        sumiram = barras_que_sumiram(havia, na_tela_pos,
+                                                     andado)
                         # UM QUADRADO POR MORTE. Duas entradas podem sumir na
                         # mesma leitura - grupo todo com pouca vida - e ai sao
                         # dois corpos. A conta da trava sabe quantos foram.
