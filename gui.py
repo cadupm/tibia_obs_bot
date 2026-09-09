@@ -144,8 +144,8 @@ ABAS = [
              "segundos: o de tras na rota nao vale a viagem"),
         ]),
         ("Achar o corpo na tela", "LOOT_ACHA_CORPO", [
-            ("LOOT_SO_SE_ACHOU", "So saquear se achou", bool,
-             "sem saber o quadrado, largar e melhor que chutar"),
+            ("LOOT_SO_SE_ACHOU", "Largar se nao achar", bool,
+             "desligado: clica no palpite, que e melhor que nao agir"),
             ("LOOT_DIFF_MIN", "Mudanca minima do quadrado", float,
              "por pixel; o log de cada morte diz o valor real"),
             ("LOOT_DIFF_MARGEM", "Vantagem sobre o segundo", float,

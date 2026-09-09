@@ -15,8 +15,11 @@ O que se mede aqui:
   - acha o quadrado certo, e nao o vizinho;
   - acha mesmo com o personagem tendo ANDADO entre os dois quadros (o viewport
     acompanha o personagem, entao o mesmo lugar do mundo aparece deslocado);
-  - com chao animado em tudo, ou com dois quadrados mudando igual, ele DIZ que
-    nao sabe em vez de chutar - e ai o bot larga o corpo;
+  - com chao animado em tudo - nenhum quadrado mudando o bastante para ser
+    corpo - ele DIZ que nao sabe, e ai o bot cai no palpite da odometria;
+  - com dois quadrados mudando igual ele DESEMPATA pelo mais perto do palpite,
+    em vez de desistir: dois quadrados mudando muito significa que ha corpo por
+    ali, e nao que nao se sabe nada;
   - o quadrado do proprio personagem nao e escolhido a esmo.
 """
 import os
@@ -94,14 +97,25 @@ if achou is not None:
                   f"sabe, e ai o bot larga o corpo em vez de clicar no que "
                   f"nao e corpo")
 
-# --------------- 5) dois quadrados mudando igual: tambem nao sabe
+# --------------- 5) dois quadrados mudando igual: desempata, nao desiste
+# EMPATE NAO E IGNORANCIA. Dois quadrados mudando muito e a sprite do bicho
+# pegando os dois, ou dois bichos morrendo lado a lado - nos dois casos ha corpo
+# por ali. Devolver None fazia o bot largar corpo que existia; o desempate e
+# pelo mais perto do palpite, que e a informacao independente que se tem.
 empate_a = poe(poe(BASE.copy(), (2, 0), (170, 40, 40)), (0, 2), (170, 40, 40))
 empate_b = poe(poe(BASE.copy(), (2, 0), (90, 70, 50)), (0, 2), (90, 70, 50))
 achou, nota, segundo = main.acha_o_corpo(empate_a, empate_b, (1, 1), (0, 0))
 print(f"dois bichos morrendo em quadrados diferentes: achou {achou} "
       f"(maior {nota:.0f}, segundo {segundo:.0f})")
-if achou is not None:
-    falhas.append(f"com empate ele escolheu {achou} sem margem: e chute")
+if achou not in ((2, 0), (0, 2)):
+    falhas.append(f"com dois corpos escolheu {achou}, que nao e nenhum dos "
+                  f"dois quadrados que mudaram")
+# e o desempate tem de puxar para o palpite, nao para uma ordem arbitraria
+achou_perto, _n, _s = main.acha_o_corpo(empate_a, empate_b, (0, 2), (0, 0))
+print(f"  com o palpite em (0,2), o desempate escolhe: {achou_perto}")
+if achou_perto != (0, 2):
+    falhas.append(f"o desempate ignorou o palpite: com palpite (0,2) escolheu "
+                  f"{achou_perto}")
 
 # --------------- 6) nada mudou: nao ha corpo para achar
 achou, nota, segundo = main.acha_o_corpo(BASE, BASE.copy(), (2, 0), (0, 0))

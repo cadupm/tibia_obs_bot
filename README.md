@@ -93,14 +93,20 @@ tendo mudado por outro motivo.
 
 Medido em cenário sintético: corpo aparecendo muda **16,7** por pixel, chão
 parado **0,0**, chão inteiro trocado (o pior caso de água/fogo) **10,1**. Daí
-`LOOT_DIFF_MIN = 12`. Há uma segunda defesa, `LOOT_DIFF_MARGEM`: o vencedor tem
-de mudar 1,5× mais que o segundo colocado. Dois bichos morrendo em quadrados
-diferentes, ou a tela toda mudando, dão empate e não viram chute.
+`LOOT_DIFF_MIN = 12`.
 
-**Não sabendo onde o corpo caiu, o bot larga o corpo** (`LOOT_SO_SE_ACHOU`) e diz
-que largou. Os números reais aparecem no log de cada morte (`mudou N por pixel,
-segundo M`) — é por eles que se calibra o limiar na sua caverna, já que os meus
-vêm de cenário sintético.
+**Não decidir não vira não agir.** Quando nenhum quadrado muda o bastante, o bot
+cai no palpite da odometria e clica **um** ponto — ainda um clique, num lugar só.
+Ligar `LOOT_SO_SE_ACHOU` faz ele largar o corpo nesses casos, e isso já custou
+loot: com limiares calibrados em cenário sintético, "não decidiu" é o caso comum
+e não a exceção, porque a sprite do bicho é maior que um quadrado e o vizinho
+também muda. Empate entre dois quadrados também não é ignorância — dois
+quadrados mudando muito significa que há corpo por ali —, então o desempate é
+pelo mais perto do palpite (`LOOT_DIFF_MARGEM` decide o que conta como empate).
+
+Os números reais aparecem no log de cada morte (`mudou N por pixel, segundo M`)
+— é por eles que se calibra o limiar na sua caverna, já que os meus vêm de
+cenário sintético.
 
 Depois do clique sai um `esc` (`LOOT_FECHA_MENU`): sem *classic control* o clique
 direito abre menu de contexto, que fica na frente e engole o que vier depois.

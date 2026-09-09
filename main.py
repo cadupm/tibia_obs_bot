@@ -287,13 +287,15 @@ LOOT_ACHA_CORPO = True
 LOOT_BUSCA_RAIO = 1             # SQM em volta do palpite onde PROCURAR o corpo
                                 # (1 = os 9 quadrados). Nao e varredura de
                                 # acao: e onde a comparacao olha.
-LOOT_SO_SE_ACHOU = True         # so saqueia quando o quadrado foi
-                                # IDENTIFICADO na tela. Nao sabendo onde o
-                                # corpo caiu, o bot largava tiro para todo lado
-                                # esperando acertar; agora ele larga o corpo e
-                                # diz que largou. Chutar clique de botao direito
-                                # em chao vazio abre menu de contexto e nao
-                                # saqueia nada.
+LOOT_SO_SE_ACHOU = False        # largar o corpo quando a identificacao na tela
+                                # nao fecha. Ligado, o bot nao faz NADA nesses
+                                # casos - e com limiares calibrados em cenario
+                                # sintetico esse era o caso comum, nao a
+                                # excecao: a sprite do bicho e maior que um
+                                # quadrado, entao o vizinho tambem muda e a
+                                # margem sobre o segundo colocado reprova.
+                                # Desligado (padrao), ele clica no PALPITE da
+                                # odometria - ainda UM clique em UM ponto.
 LOOT_DIFF_MIN = 12.0            # diferenca media por pixel para o quadrado
                                 # contar como "mudou". Chao parado da quase
                                 # zero; sair um bicho de cima muda muito.
@@ -3629,9 +3631,19 @@ def acha_o_corpo(tela_antes, tela_agora, palpite, andou):
     notas.sort(reverse=True)
     melhor, segundo = notas[0], (notas[1] if len(notas) > 1 else (0.0, None))
     if melhor[0] < LOOT_DIFF_MIN:
+        # nada mudou o bastante: nao ha corpo reconhecivel aqui
         return None, melhor[0], segundo[0]
     if segundo[0] > 0 and melhor[0] < segundo[0] * LOOT_DIFF_MARGEM:
-        return None, melhor[0], segundo[0]
+        # EMPATE NAO E IGNORANCIA. Dois quadrados mudando muito e a sprite do
+        # bicho pegando os dois, ou dois bichos morrendo lado a lado - nos dois
+        # casos ha corpo por ali. Antes isso devolvia None e o bot largava o
+        # corpo; agora desempata pelo mais perto do palpite, que e a informacao
+        # independente que se tem.
+        empatados = [q for nota, q in notas if nota >= segundo[0]]
+        perto = min(empatados,
+                    key=lambda q: (abs(q[0] - palpite[0])
+                                   + abs(q[1] - palpite[1])))
+        return perto, melhor[0], segundo[0]
     return melhor[1], melhor[0], segundo[0]
 
 
@@ -4457,25 +4469,26 @@ def run_bot():
                             tela_antes, viewport(leitura), palpite,
                             (int(round(andado[0])), int(round(andado[1]))))
                         if achou is not None:
-                            print(f"[loot] achei o corpo na tela em {achou}: "
-                                  f"esse quadrado mudou {nota:.0f} por pixel "
-                                  f"desde que o bicho estava vivo (segundo "
-                                  f"colocado: {segundo:.0f})")
+                            print(f"[loot] o corpo esta em {achou}: esse "
+                                  f"quadrado mudou {nota:.0f} por pixel desde "
+                                  f"que o bicho estava vivo (segundo colocado: "
+                                  f"{segundo:.0f}; palpite era {palpite})")
                         else:
-                            print(f"[loot] nao deu para separar o corpo na "
-                                  f"tela (maior mudanca {nota:.0f}, segundo "
-                                  f"{segundo:.0f}); vou pelo palpite da "
-                                  f"odometria e varro o anel")
+                            print(f"[loot] nenhum quadrado mudou o bastante "
+                                  f"para ser corpo (maior {nota:.0f}, limiar "
+                                  f"{LOOT_DIFF_MIN:.0f})"
+                                  + (": largo o corpo" if LOOT_SO_SE_ACHOU
+                                     else f": clico no palpite {palpite}"))
                     if achou is not None:
                         marca_o_corpo(caminho, achou, odo_agora, na_tela=True)
                     elif LOOT_ACHA_CORPO and LOOT_SO_SE_ACHOU:
-                        # LARGAR E MELHOR QUE CHUTAR. Sem saber o quadrado, o
-                        # bot clicava e apertava em volta esperando acertar -
-                        # clique de botao direito em chao vazio abre menu de
-                        # contexto e nao saqueia nada.
-                        print("[loot] sem saber o quadrado do corpo, largo ele "
-                              "em vez de clicar no que nao e corpo")
+                        # com LOOT_SO_SE_ACHOU ligado, nao age sem certeza
+                        pass
                     else:
+                        # DEGRADAR, NAO DESISTIR. Sem separar o quadrado na
+                        # tela, vale o palpite da odometria: ainda e UM clique
+                        # em UM ponto, e nao fazer nada e pior do que clicar no
+                        # lugar mais provavel.
                         marca_o_corpo(caminho, onde, odo_agora,
                                       visto_em=visto_em)
                 else:

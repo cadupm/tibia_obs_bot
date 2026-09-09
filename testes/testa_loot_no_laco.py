@@ -130,8 +130,8 @@ for i, o_que in fita:
     print(f"  quadro {i:>2}: {o_que}")
 
 cliques = [i for i, o in fita if isinstance(o, tuple) and o[0] == "clique"]
-print(f"achou o corpo na tela: {'[loot] achei o corpo na tela' in log}")
-if "[loot] achei o corpo na tela" not in log:
+print(f"achou o corpo na tela: {'[loot] o corpo esta em' in log}")
+if "[loot] o corpo esta em" not in log:
     falhas.append("nao achou o corpo na tela, embora o quadrado tenha mudado "
                   "de bicho para corpo")
 miras = [i for i, o in fita if isinstance(o, tuple) and o[0] == "mira"]
