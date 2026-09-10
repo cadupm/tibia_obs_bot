@@ -1599,19 +1599,39 @@ def battle_state(win):
                            float(moldura.mean()) if moldura.size else 0.0,
                            img[fatia].astype(np.uint8)))
 
-    # ancora: coluna das barras, aprendida de uma barra saudavel
+    # ancora: coluna das barras, de preferencia aprendida de uma barra
+    # saudavel (larga) - a medida mais confiavel, sem ruido de borda.
     saudaveis = [c for c in candidatos if c[1] >= BATTLE_BAR_HEALTHY]
     if saudaveis:
         maior = max(saudaveis, key=lambda c: c[1])
         _BATTLE_ANCHOR[chave] = maior[0]
         _BATTLE_TRACK = max(_BATTLE_TRACK, maior[1])
+    elif chave not in _BATTLE_ANCHOR and candidatos:
+        # BOOTSTRAP SEM BARRA LARGA. Exigir largura >= BATTLE_BAR_HEALTHY so
+        # para ENSINAR a coluna pela primeira vez travava a leitura para
+        # sempre quando o UNICO bicho da battle list tem barra mais estreita
+        # que isso - e a comparacao usada depois (abs(c[0]-ancora)<=3) nao
+        # depende de largura nenhuma, so da coluna.
+        #
+        # Relatado: "Lizard Executioner" sozinho na lista, e so ataca quando
+        # tem mais de um bicho. Medido ao vivo: sprite com 52 px coloridos
+        # (o minimo e 20 - nao e escuro, passa facil), barra de so 42 px
+        # (BATTLE_BAR_HEALTHY exige 100). Sozinho, sem esta excecao, a coluna
+        # nunca era aprendida - e sem coluna aprendida, NENHUM candidato e
+        # aceito, mesmo o proprio. Com mais de um bicho, bastava outro ter
+        # barra larga para destravar - exatamente o que foi notado.
+        #
+        # O candidato ja passou pelos dois filtros de sprite (cor e metade de
+        # cima, calibrados: 34-119 pixels numa entrada real, 0 no widget
+        # Skills) - especificos o bastante para bootstrapar sozinhos, sem
+        # reforco de barra larga.
+        melhor = max(candidatos, key=lambda c: c[1])
+        _BATTLE_ANCHOR[chave] = melhor[0]
+        _BATTLE_TRACK = max(_BATTLE_TRACK, melhor[1])
     ancora = _BATTLE_ANCHOR.get(chave)
 
-    if ancora is None:
-        # sem ancora ainda: so aceita barra larga, que nao tem falso positivo
-        aceitos = [c for c in candidatos if c[1] >= BATTLE_BAR_HEALTHY]
-    else:
-        aceitos = [c for c in candidatos if abs(c[0] - ancora) <= 3]
+    aceitos = ([c for c in candidatos if abs(c[0] - ancora) <= 3]
+              if ancora is not None else [])
 
     entradas, atacando, alvo_hp = len(aceitos), False, None
     sprites, alvo_sprite = [], None
