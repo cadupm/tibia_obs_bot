@@ -1476,6 +1476,15 @@ def battle_assinatura(sprites):
     return tuple(int(sprite.sum()) for sprite in sprites)
 
 
+_BATTLE_DEBUG = False            # liga o rastro de cada linha candidata da
+                                # battle list (--battle e quem liga). Existe
+                                # para um caso especifico: um sprite escuro o
+                                # bastante para falhar o teste de SATURACAO
+                                # (nao de brilho) do sprite, e a lista parecer
+                                # vazia com o bicho bem ali. Sem numero, vira
+                                # suspeita; com ele, vira ajuste de limiar.
+
+
 def battle_state(win):
     """
     Le a Battle List e devolve (entradas, atacando, hp_do_alvo, sprites, sprite_do_alvo).
@@ -1561,12 +1570,27 @@ def battle_state(win):
         if caixa_cor.shape[0] < 3 or caixa_cor.shape[1] < 3:
             continue
         # sem sprite colorido nao e entrada: o widget Skills (Level, Experience)
-        # tem barras finas e largas iguais, mas com texto cinza no lugar do sprite
+        # tem barras finas e largas iguais, mas com texto cinza no lugar do sprite.
+        #
+        # ISTO E SATURACAO (max canal - min canal), nao brilho: um sprite
+        # ESCURO pode ter cor de verdade e ainda cair aqui, porque perto do
+        # preto ha pouco espaco para os canais se separarem. Relatado: "quando
+        # ficou so o Lizard Executioner, dizia que nao tinha nenhum monstro na
+        # lista" - suspeita do usuario de que era por ele ser escuro, e este e
+        # o ponto exato onde isso aconteceria. _BATTLE_DEBUG imprime a
+        # contagem de toda linha candidata, aceita ou nao, para a proxima vez
+        # dar numero em vez de suspeita.
+        if _BATTLE_DEBUG:
+            print(f"[battle-debug] linha y={gy0}: caixa_cor.sum()="
+                  f"{caixa_cor.sum()} (minimo {BATTLE_SPRITE_MIN})")
         if caixa_cor.sum() < BATTLE_SPRITE_MIN:
             continue
         # e as barras de habilidade (Magic, Fist, Club) TEM icone colorido; a
         # diferenca e a altura: sprite de criatura ocupa a parte de cima da caixa
         meio = caixa_cor.shape[0] // 2
+        if _BATTLE_DEBUG:
+            print(f"[battle-debug] linha y={gy0}: metade de cima="
+                  f"{caixa_cor[:meio].sum()} (minimo {BATTLE_SPRITE_TOP_MIN})")
         if caixa_cor[:meio].sum() < BATTLE_SPRITE_TOP_MIN:
             continue
         moldura = np.concatenate([caixa_verm[0], caixa_verm[-1],
@@ -5083,21 +5107,30 @@ def show_battle():
     if not leitura:
         return
 
+    global _BATTLE_DEBUG
+    _BATTLE_DEBUG = True
     print(f"Lendo a Battle List de '{leitura.title}'. Ctrl+Alt+S para sair.")
+    print("Cada linha candidata da lista sai com a contagem de pixel colorido "
+          "no sprite dela (util para um bicho de sprite escuro que some da "
+          "leitura mesmo estando na tela).")
     guardou = False
-    while not keyboard.is_pressed(KILL_KEY):
-        entradas, atacando, alvo_hp, _, _ = battle_state(leitura)
-        if atacando and not guardou:
-            guardou = salva_amostra_battle(leitura)
-        if entradas == 0:
-            acao = "lista vazia, nao ataca"
-        elif atacando:
-            acao = f"alvo engajado ({alvo_hp:.0%} de vida), conjura {SPELL_HOTKEY}"
-        else:
-            acao = f"apertaria {ATTACK_HOTKEY}"
-        print(f"  entradas={entradas}  alvo_vermelho={atacando}  -> {acao}       ",
-              end=chr(13), flush=True)
-        time.sleep(0.3)
+    try:
+        while not keyboard.is_pressed(KILL_KEY):
+            entradas, atacando, alvo_hp, _, _ = battle_state(leitura)
+            if atacando and not guardou:
+                guardou = salva_amostra_battle(leitura)
+            if entradas == 0:
+                acao = "lista vazia, nao ataca"
+            elif atacando:
+                acao = (f"alvo engajado ({alvo_hp:.0%} de vida), conjura "
+                        f"{SPELL_HOTKEY}")
+            else:
+                acao = f"apertaria {ATTACK_HOTKEY}"
+            print(f"  entradas={entradas}  alvo_vermelho={atacando}  -> {acao}"
+                  + " " * 8)
+            time.sleep(0.3)
+    finally:
+        _BATTLE_DEBUG = False
     print()
 
 

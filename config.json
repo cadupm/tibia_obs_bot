@@ -31,7 +31,7 @@
   "SPELL_MANA_FLOOR": 25.0,
   "SPELL_DELAY_AFTER_ATTACK": 0.5,
   "ONLY_KNOWN_MONSTERS": true,
-  "AUTO_LEARN": false,
+  "AUTO_LEARN": true,
   "LOOT_SO_MARCADOS": true,
   "ENABLE_WALK": true,
   "MARK_COLOR": "azul",
@@ -42,7 +42,7 @@
   "WALK_CLICK_COOLDOWN": 1.5,
   "WALK_MAX_CLICKS": 4,
   "MINIMAP_PX_SQM": 1.0,
-  "WAYPOINTS_FILE": "C:\\Users\\cadup\\OneDrive\\Desktop\\analyses\\rotas\\inicial kina.json",
+  "WAYPOINTS_FILE": "C:\\Users\\cadup\\OneDrive\\Desktop\\analyses\\rotas\\inicial kina -1.json",
   "USE_ROUTE_ORDER": true,
   "ENABLE_LOOT": true,
   "LOOT_CLICA": true,
@@ -79,11 +79,11 @@
     },
     {
       "ativo": true,
-      "tecla": "f7",
-      "intervalo": 50.0
+      "tecla": "f2",
+      "intervalo": 40.0
     },
     {
-      "ativo": true,
+      "ativo": false,
       "tecla": "f8",
       "intervalo": 60.0
     },
