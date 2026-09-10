@@ -3152,6 +3152,60 @@ def select_target(win):
     return True
 
 
+def registra_suspeita_de_morte(leitura, trava, entradas):
+    """
+    Grava o instante em que uma morte passou a ser suspeitada, uma vez.
+
+    Relatado em cacada: o sprite (e a barra) escurece com o bicho quase morto
+    na battle list, o bot troca de alvo com ele ainda vivo, e como isso libera
+    a rota, o movimento seguinte cancela o modo chase no cliente - mesmo o
+    personagem de fato ainda lutando.
+
+    sprite_igual() ja tolera escurecimento UNIFORME por correlacao (criterio
+    ja existente, para este mesmo motivo). Se ainda assim a suspeita aparece,
+    o motivo pode ser mais cedo: a barra da battle list caindo abaixo de
+    BATTLE_BAR_MIN_BRIGHT sem o bicho ter morrido de verdade - a entrada
+    inteira some de `sprites` antes de chegar a comparar sprite nenhum.
+
+    Sem uma amostra real desse instante so da para supor qual dos dois e.
+    Grava o recorte cru da battle list (para medir depois, com calma) e os
+    numeros de diff/correlacao contra QUALQUER sprite que ainda esteja na
+    lista - se um deles ainda bater span aproximado, o problema e a barra;
+    se nenhum bater nem por correlacao, e o sprite mesmo que mudou demais.
+    """
+    try:
+        cx, cy, cw, ch = client_rect(leitura)
+        x0 = max(cw - BATTLE_PANEL_W, 0)
+        y0, y1 = BATTLE_SEARCH_Y[0], min(BATTLE_SEARCH_Y[1], ch)
+        painel = grab((cx + x0, cy + y0, cw - x0, y1 - y0))
+        pasta = os.path.dirname(os.path.abspath(__file__))
+        mss.tools.to_png(
+            np.ascontiguousarray(painel.astype(np.uint8)).tobytes(),
+            (painel.shape[1], painel.shape[0]),
+            output=os.path.join(pasta, "suspeita_de_morte.png"))
+        _entradas_agora, _atacando, _hp, sprites_agora, _as = battle_state(
+            leitura)
+        print(f"[attack] suspeita de morte: {entradas} entrada(s) na battle "
+              f"list, {len(sprites_agora)} sprite(s) a comparar. Gravei "
+              f"suspeita_de_morte.png")
+        for i, sp in enumerate(sprites_agora):
+            if sp is None or trava.sprite is None or sp.shape != trava.sprite.shape:
+                print(f"  sprite {i}: formato incompativel para comparar")
+                continue
+            x = sp.astype(np.float32).ravel()
+            y = trava.sprite.astype(np.float32).ravel()
+            diff = float(np.abs(x - y).mean())
+            xm, ym = x - x.mean(), y - y.mean()
+            escala = float(np.sqrt((xm * xm).sum() * (ym * ym).sum()))
+            corr = float((xm * ym).sum() / escala) if escala > 1e-6 else 0.0
+            print(f"  sprite {i}: diferenca media {diff:.1f} (limiar "
+                  f"{MONSTER_DIFF_MAX}), correlacao {corr:.3f} (limiar "
+                  f"{MONSTER_CORR_MIN})")
+    except Exception as erro:
+        print(f"[attack] nao consegui gravar a suspeita de morte: "
+              f"{type(erro).__name__}: {erro}")
+
+
 class TravaDeAlvo:
     """
     Segura a tecla de ataque enquanto o bicho engajado nao SUMIR da battle list.
@@ -5697,7 +5751,23 @@ def run_bot():
             sem_alvo = 0 if alvo else sem_alvo + 1
 
             # so troca de alvo quando o bicho engajado sumir da battle list
+            sumidas_antes = trava.sumidas
             pode_trocar = trava.atualiza(alvo, alvo_sprite, sprites)
+            if trava.sumidas == 1 and sumidas_antes == 0:
+                # PRIMEIRO SINAL DE UMA MORTE SUSPEITA. Relatado: o sprite (e a
+                # barra) escurece com o bicho quase morto, e o bot troca de
+                # alvo com ele ainda vivo - o que resume a rota, e uma ordem
+                # de movimento no cliente cancela o chase, mesmo o personagem
+                # ainda estando de fato lutando. sprite_igual() ja tolera
+                # escurecimento UNIFORME (por correlacao), entao se isto ainda
+                # acontece o motivo pode ser mais cedo: a barra da battle list
+                # pode estar caindo abaixo de BATTLE_BAR_MIN_BRIGHT sem o bicho
+                # ter morrido de verdade - nesse caso a entrada nem chega a
+                # comparar sprite, ela some de `sprites` inteira.
+                #
+                # Sem uma amostra real desse instante so da para supor. Aqui
+                # se grava o que se tem, uma vez por suspeita.
+                registra_suspeita_de_morte(leitura, trava, entradas)
 
             # ONDE O BICHO ESTA, enquanto vivo: o corpo nao tem barra de vida,
             # entao depois de morto nao ha como enxerga-lo. Guardar a posicao do

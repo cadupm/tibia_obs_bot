@@ -42,7 +42,7 @@
   "WALK_CLICK_COOLDOWN": 1.5,
   "WALK_MAX_CLICKS": 4,
   "MINIMAP_PX_SQM": 1.0,
-  "WAYPOINTS_FILE": "C:\\Users\\cadup\\OneDrive\\Desktop\\analyses\\rotas\\inicial kina -1.json",
+  "WAYPOINTS_FILE": "C:\\Users\\cadup\\OneDrive\\Desktop\\analyses\\rotas\\elf venore.json",
   "USE_ROUTE_ORDER": true,
   "ENABLE_LOOT": true,
   "LOOT_CLICA": true,
