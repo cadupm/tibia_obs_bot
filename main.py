@@ -910,10 +910,22 @@ def restore_windows():
         except Exception:
             pass
     while _ALPHA_ORIGINAL:
-        win, alpha = _ALPHA_ORIGINAL.pop()
+        win, alpha, tinha_layered = _ALPHA_ORIGINAL.pop()
         try:
-            set_alpha(win, alpha)
-            print(f"[setup] opacidade de '{win.title}' devolvida para {alpha}.")
+            if tinha_layered:
+                set_alpha(win, alpha)
+                print(f"[setup] opacidade de '{win.title}' devolvida para "
+                      f"{alpha}.")
+            else:
+                # ELA NAO ERA LAYERED. set_alpha() LIGA WS_EX_LAYERED e nunca
+                # desliga - restaurar so o numero do alpha deixava a janela
+                # com um estilo que ela nunca teve antes do bot mexer, mesmo
+                # parecendo igual (opaca) por fora. Buscado de GWL_EXSTYLE, que
+                # e o local correto para saber se ela era layered - alpha=255
+                # nao distingue "nao e layered" de "e layered e vale 255".
+                tira_layered(win)
+                print(f"[setup] estilo layered de '{win.title}' removido: ela "
+                      f"nao tinha antes do bot mexer.")
         except Exception:
             pass
 
@@ -928,12 +940,40 @@ def get_alpha(win):
     return alpha.value
 
 
+def eh_layered(win):
+    """
+    A janela tem o estilo WS_EX_LAYERED ligado?
+
+    E O LOCAL CORRETO para saber se ela era layered antes do bot mexer -
+    get_alpha() nao serve para isso: ele devolve 255 tanto para "nao e
+    layered" quanto para "e layered e o valor e 255", e as duas sao estados
+    diferentes da janela. Restaurar so o numero do alpha, sem isso, deixava a
+    janela permanentemente layered mesmo quando ela nunca tinha sido - o que
+    pode ser exatamente o tipo de coisa que atrapalha o hook do OBS Game
+    Capture, ja fragil por causa do BattlEye.
+    """
+    ex = user32.GetWindowLongW(win._hWnd, GWL_EXSTYLE)
+    return bool(ex & WS_EX_LAYERED)
+
+
+OBS_ALPHA_TIBIA = 1              # opacidade do Tibia em modo OBS: quase
+                                # invisivel, para o projetor aparecer atraves
+                                # dele. E o mesmo valor padrao do opacity.py.
+
+
 def set_alpha(win, valor):
     """Mesma operacao do opacity.py, para o bot poder se corrigir."""
     hwnd = win._hWnd
     ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
     user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED)
     user32.SetLayeredWindowAttributes(hwnd, 0, valor, LWA_ALPHA)
+
+
+def tira_layered(win):
+    """Desliga WS_EX_LAYERED, devolvendo a janela ao estado nao-layered."""
+    hwnd = win._hWnd
+    ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex & ~WS_EX_LAYERED)
 
 
 def setup_windows():
@@ -977,12 +1017,30 @@ def setup_windows():
         set_topmost(jogo)
         alpha = get_alpha(jogo)
         if alpha > 250:
+            # O BOT SE CORRIGE, em vez de so avisar. Opaco, o Tibia cobre o
+            # projetor por cima - e como a leitura de pixel e o proprio
+            # projetor, o bot passa a ler o jogo (preto, por causa do
+            # BattlEye) em vez do que o projetor mostra. Medido: com o Tibia
+            # opaco, a barra de vida lia 0,0% de preenchimento em toda a
+            # leitura - "hp lido em 0.0%: morto ou janela coberta" sem parar,
+            # porque a barra de vida real nunca chega a ser vista.
+            #
+            # Relatado depois de o usuario ter aberto o opacity.py: rodar
+            # 'python opacity.py 255' (ou fechar e reabrir o jogo, que nasce
+            # opaco) devolve o Tibia a opaco e quebra o truque do OBS ate a
+            # proxima vez que o bot for iniciado - o que este ramo agora
+            # corrige sozinho.
             print(f"        aviso: o Tibia esta opaco (alpha {alpha}) e vai cobrir o "
-                  f"projetor. Rode 'python opacity.py 1' para ver atraves dele.")
+                  f"projetor; baixando para {OBS_ALPHA_TIBIA} para ver atraves dele.")
+            _ALPHA_ORIGINAL.append((jogo, alpha, eh_layered(jogo)))
+            set_alpha(jogo, OBS_ALPHA_TIBIA)
     else:
         alpha = get_alpha(jogo)
         if alpha < 250:
-            _ALPHA_ORIGINAL.append((jogo, alpha))
+            # alpha < 250 so acontece com a janela ja layered (e como
+            # get_alpha() confirma isso), entao aqui tinha_layered e sempre
+            # True - nao ha ambiguidade neste ramo.
+            _ALPHA_ORIGINAL.append((jogo, alpha, True))
             set_alpha(jogo, 255)
             print(f"[setup] opacidade do Tibia estava em {alpha} (barras ilegiveis); "
                   f"subi para 255 e devolvo no fim.")
