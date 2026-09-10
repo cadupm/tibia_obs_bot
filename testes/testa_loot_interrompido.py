@@ -114,9 +114,11 @@ fase(2, {}, [], [], None)                            # cave vazia
 fase(2, A_VIVO, [], ["A"], None)                     # A aparece
 fase(6, A_VIVO, [], ["A"], "A")                      # engajado, apanhando
 # A MORRE longe. Com a lista vazia o bot comeca a recolher: a morte fecha, a
-# carencia passa, o clique no corpo sai e o personagem poe-se a andar. Sao 8
-# leituras: o bastante para a caminhada COMECAR e nao terminar.
-fase(8, {}, [A_MORRE_EM], [], None)
+# folga pos-morte passa (GRACA_POS_MORTE_LEITURAS, para a ressurreicao ter
+# chance de provar uma morte falsa antes de soltar a rota), so entao o clique
+# no corpo sai e o personagem poe-se a andar. O bastante para a caminhada
+# COMECAR e nao terminar.
+fase(main.GRACA_POS_MORTE_LEITURAS + 8, {}, [A_MORRE_EM], [], None)
 # B aparece no meio da caminhada e e morto colado
 B_VIVO = {"B": B_VEM_DE}
 fase(2, B_VIVO, [A_MORRE_EM], ["B"], None)

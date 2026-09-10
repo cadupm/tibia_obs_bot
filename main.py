@@ -176,6 +176,17 @@ TARGET_GONE_READS = 3       # leituras seguidas SEM a entrada do bicho para dar
                             # ele por morto. Uma leitura ruim nao vale: enquanto
                             # o bot acha que ha bicho, ele nao anda nem clica no
                             # mapa - clique durante o ataque troca chase/stand.
+GRACA_POS_MORTE_LEITURAS = 20  # leituras de folga logo apos confirmar uma
+                            # morte, antes de deixar a rota resumir andar.
+                            # Confirmar por CONTAGEM (TARGET_GONE_READS) erra
+                            # quando o bicho fica dificil de ler com HP
+                            # critico (sprite/barra escurecidos) por mais
+                            # leituras que isso, sem ter morrido de verdade -
+                            # e so se descobre pela RESSURREICAO dele, um
+                            # pouco depois. Esta folga da tempo para a
+                            # checagem de ressurreicao provar o engano ANTES
+                            # de a rota clicar no mapa e cancelar o chase no
+                            # cliente com o personagem ainda lutando.
 TARGET_LOST_MAX = 4.0       # s segurando o ataque quando a moldura do alvo some
                             # mas a entrada dele continua na battle list. Passado
                             # isso, assume-se leitura ruim de verdade e reengaja.
@@ -5734,6 +5745,30 @@ def run_bot():
 
             # 3) combo: engaja quem estiver sem alvo, e conjura no alvo engajado
             entradas, alvo, alvo_hp, sprites, alvo_sprite = battle_state(leitura)
+
+            # PROVA DE RESSURREICAO. Uma morte declarada e "de verdade" ou "a
+            # deteccao perdeu a entrada por um instante" olham identicos no
+            # log - as duas dizem "morreu, posso trocar" da mesma forma, e so
+            # da para separar se o MESMO sprite reaparecer pouco depois, o que
+            # e impossivel para uma morte de verdade. Confere isso ANTES de
+            # registrar a morte desta leitura, contra as ultimas declaradas.
+            agora_t = time.time()
+            recentes = caminho.get("mortos_recentes") or []
+            caminho["mortos_recentes"] = [
+                (sp, t) for sp, t in recentes if agora_t - t <= 20.0]
+            for sp in sprites:
+                achado = next((t for m, t in caminho["mortos_recentes"]
+                              if sprite_igual(sp, m)), None)
+                if achado is not None:
+                    print(f"[attack] RESSURREICAO: um sprite declarado morto "
+                          f"ha {agora_t - achado:.1f}s reapareceu na battle "
+                          f"list. Ele nao tinha morrido - a deteccao perdeu a "
+                          f"entrada por um instante e a morte foi falsa.")
+                    caminho["mortos_recentes"] = [
+                        (m, t) for m, t in caminho["mortos_recentes"]
+                        if t != achado]
+                    break
+
             monstros, aprendido = auto_learn(alvo_sprite, monstros)
             if aprendido:
                 loot_flags = load_loot_flags()   # o novo entrou no arquivo
@@ -5915,6 +5950,24 @@ def run_bot():
                     del historico[:-(TARGET_GONE_READS + 2)]
             if ENABLE_LOOT and trava.morreu:
                 trava.morreu = False
+                if trava.morto_sprite is not None:
+                    caminho.setdefault("mortos_recentes", []).append(
+                        (trava.morto_sprite, time.time()))
+                # FOLGA POS-MORTE. A confirmacao de morte e por CONTAGEM de
+                # leituras sem a entrada (TARGET_GONE_READS): se a entrada
+                # ficar mais tempo que isso sumida da leitura SEM o bicho ter
+                # morrido de verdade (sprite ou barra dificeis de ler com HP
+                # critico), a morte e confirmada errada - e so se descobre
+                # pela RESSURREICAO, algumas leituras depois. Ate ali, `lutando`
+                # segurava a rota so via `entradas>0`; na leitura seguinte a
+                # uma confirmacao, com a lista ainda vazia, a rota ja tinha
+                # licenca para clicar - e clique no mapa cancela o chase no
+                # cliente, ainda com o personagem lutando de verdade. Esta
+                # folga da tempo para a checagem de ressurreicao (que roda a
+                # cada leitura, ate 20s) provar o engano ANTES de qualquer
+                # clique sair.
+                caminho["folga_pos_morte"] = (
+                    caminho.get("leituras", 0) + GRACA_POS_MORTE_LEITURAS)
                 mortos_agora = max(getattr(trava, "mortos", 1), 1)
                 trava.mortos = 0
                 # QUEM MORREU decide se ha o que saquear. Atacar e saquear sao
@@ -6248,8 +6301,10 @@ def run_bot():
             # personagem. A excecao e a lista que ja provou nao responder ao ataque
             # (NPC, player): essa nao morre nunca e travaria o cave.
             so_inuteis = lista_inutil == assinatura
+            em_folga = (caminho.get("leituras", 0)
+                       <= caminho.get("folga_pos_morte", -1))
             lutando = ((entradas > 0 and not so_inuteis)
-                       or bool(alvo) or not pode_trocar)
+                       or bool(alvo) or not pode_trocar or em_folga)
             # O LOOT LE ISTO para decidir se pode apertar a tecla de parada
             # depois do clique. Ela para TODAS as acoes no cliente: solta o
             # alvo engajado e, em kite, corta o passo de fuga. Enquanto houver
