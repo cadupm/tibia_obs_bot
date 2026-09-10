@@ -102,6 +102,16 @@ ABAS = [
         ]),
     ]),
     ("Autocast", [
+        # SO O INTERRUPTOR GERAL fica aqui: o campo que morava neste bloco
+        # (AUTOCAST_MANA_FLOOR) saiu, mas o interruptor tem de ficar - sem
+        # ele, ENABLE_AUTOCAST nao aparece em NENHUM widget da tela.
+        # Removido junto com o campo, ficou destrancado no valor que estava
+        # salvo (False) e sem jeito de ligar pelo painel: os quatro slots
+        # abaixo podiam estar todos "ativo", que nao adiantava nada. E o
+        # proprio arranque ja avisava - "ENABLE_AUTOCAST = False (padrao
+        # True)" no relatorio de config - so que so avisava, nao dava como
+        # corrigir.
+        ("Autocast", "ENABLE_AUTOCAST", []),
         # Aqui e nao no Combate: e magia que o bot conjura sozinho, como o
         # resto desta aba. O gatilho e que difere - as de baixo saem por tempo,
         # esta sai quando TODO lado parece parede, que e o que a paralisia faz
