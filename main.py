@@ -147,6 +147,15 @@ BATTLE_BAR_MIN_FRACO = 2    # ... e o minimo quando a coluna das barras ja e
 BATTLE_BAR_HEALTHY = 100    # barra "saudavel": ensina a coluna das barras (ancora)
 BATTLE_BAR_MAX_H = 6        # a barra da entrada e fina (3px); mais grosso e botao
 BATTLE_FRAME_RED = 0.25     # fracao vermelha na moldura para "este e o alvo"
+# O TOGGLE DE CHASE, no painel de equipamento (abaixo do minimapa). O cliente
+# desenha DOIS bonecos empilhados - parado (Stand) em cima, correndo (Chase)
+# embaixo - e so o modo ATIVO fica colorido; o outro fica cinza/apagado.
+# Medido no cliente 1920x1009, com chase ligado: o boneco correndo forma um
+# bloco verde saturado (RGB medio ~65,196,65) nesta caixa. Com chase desligado
+# o mesmo recorte NAO tem pixel verde nenhum - e a diferenca de conjuntos de
+# sempre, sem limiar para calibrar: tem verde ou nao tem.
+CHASE_ICON = (1872, 143, 16, 20)   # offset e tamanho, em px de cliente
+
 MONSTERS_FILE = "monstros.json"   # sprites aprendidos da battle list
 MONSTER_DIFF_MAX = 12             # diferenca media maxima para considerar igual
 MONSTER_CORR_MIN = 0.90           # ... ou a mesma forma com outro brilho: o
@@ -361,6 +370,15 @@ LOOT_VALIDADE = 90.0            # s desde a morte antes de largar o corpo sem
                                 # corpo de tres minutos atras esta longe, e ir
                                 # atras dele e sair da rota por nada.
 ATTACK_MODE = "stand"
+
+# CHASE FICA LIGADO SOZINHO. So faz sentido com ATTACK_MODE="chase": o cliente
+# tem o proprio modo de luta, e qualquer coisa pode desliga-lo por fora do bot
+# (clique sem querer, tecla de atalho do cliente, o proprio jogador
+# alternando). O bot confere de tempos em tempos e religa se achar apagado.
+ENABLE_CHASE_WATCHDOG = False
+CHASE_HOTKEY = "="              # tecla que alterna Stand/Chase no cliente
+CHASE_CHECK_SEGUNDOS = 30.0     # intervalo entre conferencias
+
 KITE_DIST = 3                   # SQM que se quer manter de qualquer bicho
 KITE_COOLDOWN = 0.35            # s entre passos de fuga (velocidade de andar)
 KITE_PISADO_MAX = 400           # quadrados guardados de chao ja andado (200 SQM
@@ -965,6 +983,41 @@ def eh_layered(win):
     """
     ex = user32.GetWindowLongW(win._hWnd, GWL_EXSTYLE)
     return bool(ex & WS_EX_LAYERED)
+
+
+def chase_ligado(win, img=None):
+    """
+    O modo Chase do CLIENTE esta ligado agora?
+
+    O cliente desenha dois bonecos empilhados no painel de equipamento -
+    parado (Stand) e correndo (Chase) - e so o ativo fica colorido; o outro
+    fica cinza. Ha verde saturado no recorte do boneco correndo quando (e so
+    quando) o chase esta ligado - medido no cliente do usuario, com e sem:
+    ligado forma um bloco de ~75 px verdes, desligado nao tem nenhum. E
+    diferenca de CONJUNTOS, sem limiar para calibrar.
+
+    Devolve None se a leitura falhar (janela minimizada etc.) - None nao e
+    False: quem chama nao pode religar o chase baseado num "nao consegui ver".
+    """
+    try:
+        if img is None:
+            cx, cy, _, _ = client_rect(win)
+            dx, dy, w, h = CHASE_ICON
+            img = grab((cx + dx, cy + dy, w, h))
+        if img.size == 0:
+            return None
+        r = img[:, :, 0].astype(np.int16)
+        g = img[:, :, 1].astype(np.int16)
+        b = img[:, :, 2].astype(np.int16)
+        # SATURACAO, nao distancia de uma cor media. O boneco tem sombreado
+        # e realce internos (medido: G varia de 91 a 254 dentro do mesmo
+        # sprite ligado) - exigir perto da media de (65,196,65) descartava as
+        # bordas mais escuras e mais claras dele. O que separa ligado de
+        # desligado e so "tem verde saturado aqui", sem meio termo a calibrar.
+        cor = (g > 90) & (g > r + 25) & (g > b + 25)
+        return bool(cor.sum() >= 20)
+    except Exception:
+        return None
 
 
 OBS_ALPHA_TIBIA = 1              # opacidade do Tibia em modo OBS: quase
@@ -5594,6 +5647,7 @@ def run_bot():
     mana_cd = Cooldown(MANA_COOLDOWN, 0.10)
     attack_cd = Cooldown(ATTACK_COOLDOWN, 0.15)
     spell_cd = Cooldown(SPELL_COOLDOWN, 0.15)
+    chase_cd = Cooldown(CHASE_CHECK_SEGUNDOS)
     sem_alvo = 0
     monstros = load_monsters()
     loot_flags = load_loot_flags()      # de quem vale pegar o corpo
@@ -6294,6 +6348,22 @@ def run_bot():
                           f"{sem_resposta} tentativas: NPC ou player? Paro de apertar "
                           f"{ATTACK_HOTKEY} ate a lista mudar.")
             cast_spell(alvo, mana, spell_cd, espera_magia)
+
+            # O CHASE DO CLIENTE PODE CAIR SOZINHO - clique sem querer, tecla
+            # de atalho do proprio cliente, o jogador alternando por engano.
+            # De tempos em tempos confere e religa, se for o caso.
+            if ENABLE_CHASE_WATCHDOG and chase_cd.ready():
+                chase_cd.mark()
+                estado_chase = chase_ligado(leitura)
+                if estado_chase is False:
+                    if teclado is not None and not teclado.isActive:
+                        focus_window(teclado)
+                    pyautogui.press(CHASE_HOTKEY)
+                    print(f"[chase] estava desligado; apertei {CHASE_HOTKEY!r} "
+                          f"para religar")
+                elif estado_chase is None:
+                    print("[chase] nao consegui ler o icone de chase nesta "
+                          "leitura")
 
             # LUTANDO: qualquer entrada na battle list segura o trajeto, nao so a
             # que conta como atacavel - bicho ainda nao aprendido, ou com o sprite

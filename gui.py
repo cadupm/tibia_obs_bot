@@ -66,6 +66,12 @@ ABAS = [
             ("KITE_DIST", "Manter distancia de", int,
              "SQM de todo bicho na tela, inclusive o alvo"),
         ]),
+        ("Manter chase ligado (so no modo chase)", "ENABLE_CHASE_WATCHDOG", [
+            ("CHASE_HOTKEY", "Tecla que alterna Stand/Chase", str,
+             "a do cliente, nao do bot"),
+            ("CHASE_CHECK_SEGUNDOS", "Conferir a cada", float,
+             "segundos; religa se achar desligado"),
+        ]),
         ("Combo de magia", "ENABLE_SPELL", [
             ("SPELL_HOTKEY", "Magia do combo", str, "entra entre os turnos"),
             ("SPELL_COOLDOWN", "Cooldown da magia", float, "segundos"),
